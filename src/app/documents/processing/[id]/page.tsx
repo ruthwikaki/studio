@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useParams, useRouter } from 'next/navigation';
@@ -280,10 +279,10 @@ export default function DocumentProcessingPage() {
             <Button variant="outline" className="w-full sm:w-auto" onClick={() => handleAction("Recalculate Totals")}>
                 <RotateCcw className="mr-2 h-4 w-4"/> Recalculate
             </Button>
-            <Button variant="destructive_outline" className="w-full sm:w-auto" onClick={() => handleAction("Flag for Review")}>
+            <Button variant="destructive" className="w-full sm:w-auto" onClick={() => handleAction("Flag for Review")}>
                 <Flag className="mr-2 h-4 w-4"/> Flag for Review
             </Button>
-             <Button className="w-full sm:w-auto" onClick={() => handleAction("Approve Document")} >
+             <Button className="w-full sm:w-auto bg-primary hover:bg-primary/90 text-primary-foreground" onClick={() => handleAction("Approve Document")} >
                 <ThumbsUp className="mr-2 h-4 w-4"/> Approve Document
             </Button>
         </CardFooter>
@@ -291,6 +290,3 @@ export default function DocumentProcessingPage() {
     </div>
   );
 }
-
-
-    
