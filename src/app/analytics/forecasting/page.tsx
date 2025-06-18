@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -83,10 +83,24 @@ export default function ProfessionalForecastingPage() {
   const [selectedProducts, setSelectedProducts] = useState<Record<string, boolean>>({});
   const [visibleColumns, setVisibleColumns] = useState(initialVisibleColumns);
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'ascending' | 'descending' } | null>(null);
+  const [productBestModels, setProductBestModels] = useState<Record<string, string>>({});
 
-  const handleSelectAll = (checked: boolean) => {
+  useEffect(() => {
+    const models = ["AI", "Seasonal", "Ensemble"];
+    const newBestModels: Record<string, string> = {};
+    mockProducts.forEach(product => {
+      newBestModels[product.id] = models[Math.floor(Math.random() * models.length)];
+    });
+    setProductBestModels(newBestModels);
+  }, []); // Empty dependency array ensures this runs once on mount (client-side)
+
+
+  const handleSelectAll = (checked: boolean | 'indeterminate') => {
     const newSelectedProducts: Record<string, boolean> = {};
-    if (checked) {
+    // If current state is indeterminate or false, next state is all selected.
+    // If current state is true (all selected), next state is none selected.
+    const shouldSelectAll = checked === 'indeterminate' || checked === false;
+    if (shouldSelectAll) {
       mockProducts.forEach(p => newSelectedProducts[p.id] = true);
     }
     setSelectedProducts(newSelectedProducts);
@@ -104,7 +118,6 @@ export default function ProfessionalForecastingPage() {
     return 'indeterminate';
   };
 
-  // Mock quick stats - in reality, this would be calculated
   const quickStats = useMemo(() => {
     if (numSelected === 0) return { products: 0, avgAccuracy: 0, totalUnits: 0, totalValue: 0 };
     return {
@@ -238,11 +251,7 @@ export default function ProfessionalForecastingPage() {
                 <TableRow>
                   <TableHead className="w-[50px] p-2 sticky left-0 bg-background/90 z-20">
                     <Checkbox 
-                        onCheckedChange={(isChecked) => {
-                            // Radix onCheckedChange for indeterminate can pass string 'indeterminate' or boolean
-                            // We want to treat click on indeterminate as 'select all'
-                            handleSelectAll(isChecked === 'indeterminate' ? true : !!isChecked);
-                        }}
+                        onCheckedChange={handleSelectAll}
                         checked={getSelectAllCheckedState()}
                         aria-label="Select all rows"
                     />
@@ -264,9 +273,7 @@ export default function ProfessionalForecastingPage() {
               <TableBody>
                 {mockProducts.map((product) => {
                   const forecasts = mockForecastData(product.currentStock);
-                  // Mock: Randomly pick a best model for visual
-                  const models = ["AI", "Seasonal", "Ensemble"];
-                  const bestModelName = models[Math.floor(Math.random() * models.length)];
+                  const bestModelName = productBestModels[product.id] || '...'; // Use state value
                   return (
                     <TableRow key={product.id} data-state={selectedProducts[product.id] ? "selected" : ""}>
                       <TableCell className="p-2 sticky left-0 bg-background z-10">
@@ -312,7 +319,11 @@ export default function ProfessionalForecastingPage() {
                        }
                        {visibleColumns.bestModel &&
                         <TableCell className="p-2 text-center">
-                            <span className="inline-flex items-center"><CheckCircle2 className="h-4 w-4 mr-1 text-success" /> {bestModelName}</span>
+                            {bestModelName === '...' ? (
+                                <Skeleton className="h-4 w-16 inline-block" />
+                            ) : (
+                                <span className="inline-flex items-center"><CheckCircle2 className="h-4 w-4 mr-1 text-success" /> {bestModelName}</span>
+                            )}
                         </TableCell>
                        }
                        <TableCell className="p-2 text-center">
@@ -385,4 +396,3 @@ export default function ProfessionalForecastingPage() {
     </div>
   );
 }
-
