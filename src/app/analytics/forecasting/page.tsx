@@ -1,425 +1,375 @@
 
 "use client";
 
-import { useState, useMemo, FormEvent } from 'react';
+import { useState, useMemo } from 'react';
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Loader2, BarChartBig, TrendingUp, Info, CalendarClock, BarChartHorizontalBig, Lightbulb, Zap, Layers, Brain, SlidersHorizontal, BarChart, ListFilter, CheckCircle, ShoppingCart, AlertTriangleIcon, Target, Settings2, Cpu, ThumbsUp, ThumbsDown, Maximize2, UploadCloud } from 'lucide-react';
-import { useGenerateDemandForecast } from '@/hooks/useAnalytics';
-import type { ForecastDemandOutput, ModelType } from '@/ai/flows/forecasting';
-import ForecastChart from '@/components/analytics/forecasting/ForecastChart';
-import ScenarioSimulator from '@/components/analytics/forecasting/ScenarioSimulator';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Skeleton } from '@/components/ui/skeleton';
-import Link from 'next/link';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Separator } from '@/components/ui/separator';
-import { Progress } from '@/components/ui/progress'; 
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuCheckboxItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import {
+  ChevronDown,
+  Filter,
+  Download,
+  BarChart2,
+  Settings2,
+  Save,
+  Mail,
+  RefreshCw,
+  Edit2,
+  GripVertical,
+  EyeOff,
+  Columns,
+  ArrowDownWideNarrow,
+  ArrowUpWideNarrow,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  PlusCircle
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Skeleton } from '@/components/ui/skeleton';
+// import ForecastChart from '@/components/analytics/forecasting/ForecastChart'; // Keep if used for new chart, or remove
 
-const SAMPLE_HISTORICAL_DATA = JSON.stringify([
-  {"date": "2023-01-01", "quantitySold": 10}, {"date": "2023-01-08", "quantitySold": 12},
-  {"date": "2023-01-15", "quantitySold": 15}, {"date": "2023-01-22", "quantitySold": 13},
-  {"date": "2023-01-29", "quantitySold": 18}, {"date": "2023-02-05", "quantitySold": 20},
-  {"date": "2023-02-12", "quantitySold": 22}, {"date": "2023-02-19", "quantitySold": 19},
-  {"date": "2023-02-26", "quantitySold": 25}, {"date": "2023-03-05", "quantitySold": 28},
-  {"date": "2023-03-12", "quantitySold": 30}, {"date": "2023-03-19", "quantitySold": 27},
-  {"date": "2023-03-26", "quantitySold": 33}, {"date": "2023-04-02", "quantitySold": 35},
-  {"date": "2023-04-09", "quantitySold": 38}, {"date": "2023-04-16", "quantitySold": 36},
-  {"date": "2023-04-23", "quantitySold": 32}, {"date": "2023-04-30", "quantitySold": 40}
-], null, 2);
-
-const VISUAL_MODELS: {
-  id: ModelType;
-  category: 'Quick & Simple' | 'Advanced Analytics' | 'AI Powered';
-  title: string;
-  description: string;
-  icon: React.ElementType;
-}[] = [
-  { id: "SIMPLE_MOVING_AVERAGE", category: 'Quick & Simple', title: "Moving Average", description: "Smooths out fluctuations. Good for stable demand.", icon: TrendingUp },
-  { id: "SEASONAL_DECOMPOSITION", category: 'Advanced Analytics', title: "Seasonal Trends", description: "Identifies & projects yearly patterns. Ideal for seasonal items.", icon: CalendarClock },
-  { id: "AI_PATTERN_RECOGNITION", category: 'AI Powered', title: "AI SmartForecast", description: "Gemini analyzes complex patterns for nuanced predictions.", icon: Cpu },
+const mockProducts = [
+  { id: "SKU001", sku: "SKU001", name: "Premium T-Shirt", category: "Apparel", currentStock: 100, imageUrl: "https://placehold.co/40x40.png?text=TS", dataAiHint: "tshirt" },
+  { id: "SKU002", sku: "SKU002", name: "Wireless Headphones", category: "Electronics", currentStock: 50, imageUrl: "https://placehold.co/40x40.png?text=HP", dataAiHint: "headphones" },
+  { id: "SKU003", sku: "SKU003", name: "Running Shoes", category: "Footwear", currentStock: 75, imageUrl: "https://placehold.co/40x40.png?text=RS", dataAiHint: "shoes" },
+  { id: "SKU004", sku: "SKU004", name: "Coffee Maker", category: "Home Goods", currentStock: 30, imageUrl: "https://placehold.co/40x40.png?text=CM", dataAiHint: "coffee maker" },
+  { id: "SKU005", sku: "SKU005", name: "Yoga Mat", category: "Sports", currentStock: 120, imageUrl: "https://placehold.co/40x40.png?text=YM", dataAiHint: "yoga mat" },
 ];
 
+const mockForecastData = (base: number) => ({
+  movingAverage: { forecast: Math.round(base * 1.1), accuracy: 85 },
+  expSmoothing: { forecast: Math.round(base * 1.15), accuracy: 87 },
+  seasonal: { forecast: Math.round(base * 1.3), accuracy: 92 },
+  aiModel: { forecast: Math.round(base * 1.25), accuracy: 90 },
+  ensemble: { forecast: Math.round(base * 1.28), accuracy: 94 },
+});
 
-export default function ForecastingPage() {
-  const [currentStep, setCurrentStep] = useState('step1');
-  const [sku, setSku] = useState('SKU001');
-  const [historicalSalesData, setHistoricalSalesData] = useState(SAMPLE_HISTORICAL_DATA); 
-  const [seasonalityFactors, setSeasonalityFactors] = useState('Standard retail seasonality, minor bump in Q4 holidays.');
-  const [selectedModelType, setSelectedModelType] = useState<ModelType>("AI_PATTERN_RECOGNITION");
-  
-  const generateForecastMutation = useGenerateDemandForecast();
-  const [forecastResult, setForecastResult] = useState<ForecastDemandOutput | null>(null);
-  const [scenarioForecastResult, setScenarioForecastResult] = useState<ForecastDemandOutput | null>(null);
+const getAccuracyColor = (accuracy: number) => {
+  if (accuracy >= 90) return 'text-success';
+  if (accuracy >= 80) return 'text-yellow-500'; // Using a generic yellow
+  return 'text-destructive';
+};
 
-  const handleSubmit = async (e?: FormEvent) => {
-    e?.preventDefault();
-    setForecastResult(null); 
-    setScenarioForecastResult(null);
-    try {
-      JSON.parse(historicalSalesData); 
-    } catch (error) {
-      generateForecastMutation.reset(); 
-      alert("Historical sales data is not valid JSON."); 
-      return;
+const initialVisibleColumns = {
+  sku: true,
+  productName: true,
+  currentStock: true,
+  movingAverage: true,
+  expSmoothing: true,
+  seasonal: true,
+  aiModel: true,
+  ensemble: true,
+  bestModel: true,
+};
+
+
+export default function ProfessionalForecastingPage() {
+  const [selectedTimePeriod, setSelectedTimePeriod] = useState("last_90_days");
+  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [selectedWarehouse, setSelectedWarehouse] = useState("all");
+  const [selectedSupplier, setSelectedSupplier] = useState("all");
+  const [selectedModelType, setSelectedModelType] = useState("all_models");
+
+  const [selectedProducts, setSelectedProducts] = useState<Record<string, boolean>>({});
+  const [visibleColumns, setVisibleColumns] = useState(initialVisibleColumns);
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'ascending' | 'descending' } | null>(null);
+
+  const handleSelectAll = (checked: boolean) => {
+    const newSelectedProducts: Record<string, boolean> = {};
+    if (checked) {
+      mockProducts.forEach(p => newSelectedProducts[p.id] = true);
     }
+    setSelectedProducts(newSelectedProducts);
+  };
 
-    const result = await generateForecastMutation.mutateAsync({
-      sku,
-      historicalSalesData,
-      seasonalityFactors,
-      modelType: selectedModelType,
-    });
-    if (result) {
-      setForecastResult(result);
-    }
+  const handleSelectProduct = (productId: string, checked: boolean) => {
+    setSelectedProducts(prev => ({ ...prev, [productId]: checked }));
   };
   
-  const isLoading = generateForecastMutation.isPending;
-  const displayForecast = scenarioForecastResult || forecastResult;
+  const numSelected = Object.values(selectedProducts).filter(Boolean).length;
 
-  const summaryMetrics = useMemo(() => {
-    if (!displayForecast) return { next30DaysUnits: "N/A", trend: "N/A", orderDate: "N/A" };
+  // Mock quick stats - in reality, this would be calculated
+  const quickStats = useMemo(() => {
+    if (numSelected === 0) return { products: 0, avgAccuracy: 0, totalUnits: 0, totalValue: 0 };
     return {
-      next30DaysUnits: displayForecast.predictions['30day'].demand.toLocaleString() || "N/A",
-      trend: "+25%", 
-      orderDate: "March 15", 
-    };
-  }, [displayForecast]);
+        products: numSelected,
+        avgAccuracy: 89, // Mock
+        totalUnits: numSelected * 150, // Mock
+        totalValue: numSelected * 150 * 25, // Mock
+    }
+  }, [numSelected]);
+
+
+  const ColumnToggleDropdown = () => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="sm"><Columns className="mr-2 h-4 w-4" /> View Columns</Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuLabel>Toggle Columns</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {Object.entries(initialVisibleColumns).map(([key, _]) => (
+          <DropdownMenuCheckboxItem
+            key={key}
+            checked={visibleColumns[key as keyof typeof initialVisibleColumns]}
+            onCheckedChange={(checked) =>
+              setVisibleColumns(prev => ({ ...prev, [key]: !!checked }))
+            }
+          >
+            {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+          </DropdownMenuCheckboxItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+  
+  // Placeholder for sorting
+  const requestSort = (key: string) => {
+    // Sorting logic would go here
+    console.log("Request sort by:", key);
+  };
 
 
   return (
-    <div className="flex flex-col gap-8 py-6">
-      <header className="mb-4">
-        <h1 className="text-4xl font-headline font-bold text-foreground tracking-tight">Demand Forecasting</h1>
-        <p className="text-lg text-muted-foreground">Predict future demand with powerful AI and statistical models.</p>
-      </header>
+    <div className="flex flex-col gap-4 h-full p-2 sm:p-4 bg-background">
+      {/* Top Filter Bar */}
+      <Card className="shadow-sm border-border">
+        <CardContent className="p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={selectedTimePeriod} onValueChange={setSelectedTimePeriod}>
+              <SelectTrigger className="w-auto min-w-[150px] h-9 text-xs">
+                <SelectValue placeholder="Time Period" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Time</SelectItem>
+                <SelectItem value="last_30_days">Last 30 Days</SelectItem>
+                <SelectItem value="last_90_days">Last 90 Days</SelectItem>
+                <SelectItem value="custom_range">Custom Range</SelectItem>
+              </SelectContent>
+            </Select>
+             <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+              <SelectTrigger className="w-auto min-w-[150px] h-9 text-xs">
+                <SelectValue placeholder="Product Category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Categories</SelectItem>
+                <SelectItem value="electronics">Electronics</SelectItem>
+                <SelectItem value="apparel">Apparel</SelectItem>
+                <SelectItem value="accessories">Accessories</SelectItem>
+                <SelectItem value="home_goods">Home Goods</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={selectedWarehouse} onValueChange={setSelectedWarehouse}>
+              <SelectTrigger className="w-auto min-w-[150px] h-9 text-xs">
+                <SelectValue placeholder="Warehouse" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Warehouses</SelectItem>
+                <SelectItem value="west_coast">West Coast</SelectItem>
+                <SelectItem value="east_coast">East Coast</SelectItem>
+                <SelectItem value="central">Central</SelectItem>
+              </SelectContent>
+            </Select>
+             <Select value={selectedSupplier} onValueChange={setSelectedSupplier}>
+              <SelectTrigger className="w-auto min-w-[150px] h-9 text-xs">
+                <SelectValue placeholder="Supplier" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Suppliers</SelectItem>
+                <SelectItem value="supplier_a">Supplier A</SelectItem>
+                <SelectItem value="supplier_b">Supplier B</SelectItem>
+                <SelectItem value="top_5">Top 5 Suppliers</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={selectedModelType} onValueChange={setSelectedModelType}>
+              <SelectTrigger className="w-auto min-w-[150px] h-9 text-xs">
+                <SelectValue placeholder="Model Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all_models">All Models</SelectItem>
+                <SelectItem value="ai_models">AI Models</SelectItem>
+                <SelectItem value="statistical_models">Statistical Models</SelectItem>
+                <SelectItem value="ensemble_models">Ensemble Models</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button variant="ghost" size="sm" className="h-9 text-xs"><Filter className="mr-1 h-3 w-3"/> More Filters</Button>
+          </div>
+        </CardContent>
+      </Card>
 
-      <Tabs value={currentStep} onValueChange={setCurrentStep} className="w-full">
-        <TabsList className="grid w-full grid-cols-3 md:max-w-2xl mx-auto mb-8">
-          <TabsTrigger value="step1">1. Select Product</TabsTrigger>
-          <TabsTrigger value="step2">2. Time & Context</TabsTrigger>
-          <TabsTrigger value="step3">3. Choose Model</TabsTrigger>
-        </TabsList>
+    <div className="flex flex-1 gap-4 overflow-hidden">
+      {/* Main Content: Excel-Style Grid and Chart */}
+      <div className="flex-1 flex flex-col gap-4 overflow-hidden">
+        {/* Excel-Style Data Grid */}
+        <Card className="shadow-lg border-border flex-1 flex flex-col overflow-hidden">
+          <CardHeader className="p-3 border-b">
+            <div className="flex justify-between items-center">
+              <CardTitle className="text-lg font-semibold">Demand Forecast Analysis</CardTitle>
+              <div className="flex items-center gap-2">
+                <ColumnToggleDropdown />
+                <Button variant="outline" size="sm"><Download className="mr-2 h-4 w-4" /> Export to Excel</Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0 flex-1 overflow-auto relative">
+            {/* Placeholder for Formula Bar */}
+            <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b p-2 flex items-center gap-2">
+                <span className="text-xs font-mono text-muted-foreground">fx</span>
+                <Input readOnly placeholder="Selected cell formula/value (placeholder)" className="h-7 text-xs flex-1" />
+            </div>
 
-        <TabsContent value="step1" className="space-y-6 animate-fadeIn">
-          <Card className="shadow-lg border-border">
+            <Table className="min-w-full whitespace-nowrap"> {/* Ensure table can scroll horizontally */}
+              <TableHeader className="sticky top-0 bg-background/90 backdrop-blur-sm z-10"> {/* Make header sticky */}
+                <TableRow>
+                  <TableHead className="w-[50px] p-2 sticky left-0 bg-background/90 z-20"> {/* Sticky checkbox column */}
+                    <Checkbox 
+                        onCheckedChange={(checked) => handleSelectAll(!!checked)}
+                        checked={numSelected === mockProducts.length && mockProducts.length > 0}
+                        indeterminate={numSelected > 0 && numSelected < mockProducts.length}
+                        aria-label="Select all rows"
+                    />
+                  </TableHead>
+                  {visibleColumns.sku && <TableHead className="w-[120px] p-2 sticky left-[50px] bg-background/90 z-20 cursor-pointer" onClick={() => requestSort('sku')}>SKU <ArrowDownWideNarrow className="inline h-3 w-3 ml-1 opacity-50" /></TableHead>}
+                  {visibleColumns.productName && <TableHead className="min-w-[200px] p-2 sticky left-[170px] bg-background/90 z-20 cursor-pointer" onClick={() => requestSort('name')}>Product Name</TableHead>}
+                  {visibleColumns.currentStock && <TableHead className="w-[100px] p-2 text-right cursor-pointer" onClick={() => requestSort('currentStock')}>Current Stock</TableHead>}
+                  
+                  {/* Forecast Model Columns */}
+                  {visibleColumns.movingAverage && <TableHead className="w-[120px] p-2 text-right cursor-pointer" onClick={() => requestSort('movingAverage')}>Moving Avg.</TableHead>}
+                  {visibleColumns.expSmoothing && <TableHead className="w-[120px] p-2 text-right cursor-pointer" onClick={() => requestSort('expSmoothing')}>Exp. Smooth</TableHead>}
+                  {visibleColumns.seasonal && <TableHead className="w-[120px] p-2 text-right cursor-pointer" onClick={() => requestSort('seasonal')}>Seasonal</TableHead>}
+                  {visibleColumns.aiModel && <TableHead className="w-[120px] p-2 text-right cursor-pointer" onClick={() => requestSort('aiModel')}>AI Model</TableHead>}
+                  {visibleColumns.ensemble && <TableHead className="w-[120px] p-2 text-right cursor-pointer" onClick={() => requestSort('ensemble')}>Ensemble</TableHead>}
+                  {visibleColumns.bestModel && <TableHead className="w-[120px] p-2 text-center cursor-pointer" onClick={() => requestSort('bestModel')}>Best Model</TableHead>}
+                   <TableHead className="w-[50px] p-2 text-center">Edit</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {mockProducts.map((product) => {
+                  const forecasts = mockForecastData(product.currentStock);
+                  // Mock: Randomly pick a best model for visual
+                  const models = ["AI", "Seasonal", "Ensemble"];
+                  const bestModelName = models[Math.floor(Math.random() * models.length)];
+                  return (
+                    <TableRow key={product.id} data-state={selectedProducts[product.id] ? "selected" : ""}>
+                      <TableCell className="p-2 sticky left-0 bg-background z-10">
+                        <Checkbox 
+                            checked={selectedProducts[product.id] || false}
+                            onCheckedChange={(checked) => handleSelectProduct(product.id, !!checked)}
+                            aria-label={`Select row for ${product.name}`}
+                        />
+                      </TableCell>
+                      {visibleColumns.sku && <TableCell className="p-2 font-medium sticky left-[50px] bg-background z-10">{product.sku}</TableCell>}
+                      {visibleColumns.productName && <TableCell className="p-2 sticky left-[170px] bg-background z-10">{product.name}</TableCell>}
+                      {visibleColumns.currentStock && <TableCell className="p-2 text-right">{product.currentStock}</TableCell>}
+
+                      {visibleColumns.movingAverage && 
+                        <TableCell className="p-2 text-right">
+                          {forecasts.movingAverage.forecast}
+                          <span className={cn("text-xs ml-1", getAccuracyColor(forecasts.movingAverage.accuracy))}>({forecasts.movingAverage.accuracy}%)</span>
+                        </TableCell>
+                      }
+                      {visibleColumns.expSmoothing &&
+                        <TableCell className="p-2 text-right">
+                          {forecasts.expSmoothing.forecast}
+                          <span className={cn("text-xs ml-1", getAccuracyColor(forecasts.expSmoothing.accuracy))}>({forecasts.expSmoothing.accuracy}%)</span>
+                        </TableCell>
+                      }
+                       {visibleColumns.seasonal &&
+                        <TableCell className="p-2 text-right">
+                          {forecasts.seasonal.forecast}
+                          <span className={cn("text-xs ml-1", getAccuracyColor(forecasts.seasonal.accuracy))}>({forecasts.seasonal.accuracy}%)</span>
+                        </TableCell>
+                       }
+                       {visibleColumns.aiModel &&
+                        <TableCell className="p-2 text-right">
+                          {forecasts.aiModel.forecast}
+                          <span className={cn("text-xs ml-1", getAccuracyColor(forecasts.aiModel.accuracy))}>({forecasts.aiModel.accuracy}%)</span>
+                        </TableCell>
+                       }
+                       {visibleColumns.ensemble &&
+                        <TableCell className="p-2 text-right">
+                          {forecasts.ensemble.forecast}
+                          <span className={cn("text-xs ml-1", getAccuracyColor(forecasts.ensemble.accuracy))}>({forecasts.ensemble.accuracy}%)</span>
+                        </TableCell>
+                       }
+                       {visibleColumns.bestModel &&
+                        <TableCell className="p-2 text-center">
+                            <span className="inline-flex items-center"><CheckCircle2 className="h-4 w-4 mr-1 text-success" /> {bestModelName}</span>
+                        </TableCell>
+                       }
+                       <TableCell className="p-2 text-center">
+                         <Button variant="ghost" size="icon" className="h-7 w-7">
+                            <Edit2 className="h-3.5 w-3.5" />
+                         </Button>
+                       </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+          <CardFooter className="p-3 border-t text-xs text-muted-foreground">
+            {numSelected} of {mockProducts.length} products selected. (Excel-like status bar placeholder)
+          </CardFooter>
+        </Card>
+
+        {/* Interactive Comparison Chart Placeholder */}
+        <Card className="shadow-md border-border">
+          <CardHeader>
+            <CardTitle className="text-lg font-semibold">Forecast Comparison - Selected Products</CardTitle>
+            <CardDescription>Interactive chart to compare models for selected products. (Placeholder)</CardDescription>
+          </CardHeader>
+          <CardContent className="h-[300px] flex flex-col items-center justify-center bg-muted/30 rounded-md">
+            <BarChart2 className="h-16 w-16 text-primary/50 mb-4" />
+            <p className="text-muted-foreground">Interactive D3.js/Recharts chart will appear here.</p>
+            <p className="text-xs text-muted-foreground">Features: Multi-select products, toggle models, zoom/pan, hover values, download.</p>
+            <div className="mt-4 space-x-2">
+                <Label className="text-xs">Toggle Models:</Label>
+                <Checkbox id="toggle_ma" disabled className="mr-1"/><Label htmlFor="toggle_ma" className="text-xs mr-2">MA</Label>
+                <Checkbox id="toggle_s" defaultChecked disabled className="mr-1"/><Label htmlFor="toggle_s" className="text-xs mr-2">Seasonal</Label>
+                <Checkbox id="toggle_ai" defaultChecked disabled className="mr-1"/><Label htmlFor="toggle_ai" className="text-xs">AI</Label>
+            </div>
+          </CardContent>
+        </Card>
+        </div>
+
+        {/* Quick Stats Sidebar */}
+        <Card className="shadow-md border-border w-full md:w-64 lg:w-72 flex-shrink-0 h-fit md:sticky md:top-20">
             <CardHeader>
-              <CardTitle className="font-headline text-2xl flex items-center">
-                <ShoppingCart className="h-6 w-6 mr-3 text-primary"/> Select Product
-              </CardTitle>
-              <CardDescription>Choose the product you want to forecast.</CardDescription>
+                <CardTitle className="text-md font-semibold">Selection Stats</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label htmlFor="sku" className="font-medium text-foreground">Product SKU</Label>
-                <Input
-                  id="sku"
-                  value={sku}
-                  onChange={(e) => setSku(e.target.value)}
-                  placeholder="Enter or search product SKU"
-                  className="mt-1 bg-background text-lg p-3"
-                />
-                <p className="text-xs text-muted-foreground mt-1.5">
-                  Current stock: 120 units. Last forecasted: 2 days ago. (Placeholders)
-                </p>
-              </div>
-            </CardContent>
-            <CardFooter className="border-t pt-6 flex justify-end bg-muted/30 rounded-b-lg">
-              <Button onClick={() => setCurrentStep('step2')} className="px-6 py-3 text-base">Next: Time & Context &raquo;</Button>
-            </CardFooter>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="step2" className="space-y-6 animate-fadeIn">
-          <Card className="shadow-lg border-border">
-            <CardHeader>
-              <CardTitle className="font-headline text-2xl flex items-center">
-                <CalendarClock className="h-6 w-6 mr-3 text-primary"/> Set Time Period & Context
-              </CardTitle>
-              <CardDescription>Define the forecast horizon and relevant market conditions.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="p-4 border rounded-md bg-muted/50 text-center">
-                <p className="text-muted-foreground">Visual timeline selector and date range picker (Coming Soon)</p>
-                <div className="flex gap-2 mt-2 justify-center">
-                    <Button variant="outline" size="sm" disabled>Next Week</Button>
-                    <Button variant="outline" size="sm" disabled>Next Month</Button>
-                    <Button variant="outline" size="sm" disabled>Next Quarter</Button>
-                </div>
-              </div>
-              <div>
-                <Label htmlFor="seasonalityFactors" className="font-medium text-foreground">Additional Context (Seasonality, Promotions, Market Events)</Label>
-                <Textarea
-                  id="seasonalityFactors"
-                  value={seasonalityFactors}
-                  onChange={(e) => setSeasonalityFactors(e.target.value)}
-                  placeholder="e.g., Summer peak, Q4 holiday promotion, new competitor launch"
-                  rows={3}
-                  className="mt-1 bg-background text-base p-3"
-                />
-              </div>
-               <div>
-                <Label htmlFor="historicalSalesData" className="font-medium text-foreground">Historical Sales Data (JSON - Temporary)</Label>
-                <Textarea
-                  id="historicalSalesData"
-                  value={historicalSalesData}
-                  onChange={(e) => setHistoricalSalesData(e.target.value)}
-                  placeholder='[{"date": "YYYY-MM-DD", "quantitySold": number}, ...]'
-                  rows={6}
-                  className="font-mono text-xs mt-1 bg-background p-2"
-                />
-                 <p className="text-xs text-muted-foreground mt-1.5">
-                   This manual JSON input will be replaced by automatic data fetching.
-                </p>
-              </div>
-            </CardContent>
-            <CardFooter className="border-t pt-6 flex justify-between bg-muted/30 rounded-b-lg">
-              <Button variant="outline" onClick={() => setCurrentStep('step1')} className="px-6 py-3 text-base">&laquo; Back: Product</Button>
-              <Button onClick={() => setCurrentStep('step3')} className="px-6 py-3 text-base">Next: Choose Model &raquo;</Button>
-            </CardFooter>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="step3" className="space-y-6 animate-fadeIn">
-          <Card className="shadow-lg border-border">
-            <CardHeader>
-              <CardTitle className="font-headline text-2xl flex items-center">
-                <Target className="h-6 w-6 mr-3 text-primary"/> Select Forecasting Model
-              </CardTitle>
-              <CardDescription>Choose a model that best fits your product and data characteristics.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {VISUAL_MODELS.map(model => (
-                  <Card 
-                    key={model.id} 
-                    className={cn(
-                        "cursor-pointer hover:shadow-xl transition-shadow border-2",
-                        selectedModelType === model.id ? "border-primary ring-2 ring-primary shadow-xl" : "border-border"
-                    )}
-                    onClick={() => setSelectedModelType(model.id)}
-                  >
-                    <CardHeader className="items-center text-center pb-2">
-                      <model.icon className={cn("h-10 w-10 mb-2", selectedModelType === model.id ? "text-primary" : "text-muted-foreground")} />
-                      <CardTitle className="font-headline text-lg">{model.title}</CardTitle>
-                    </CardHeader>
-                    <CardContent className="text-center text-xs text-muted-foreground min-h-[60px]">
-                      {model.description}
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </CardContent>
-            <CardFooter className="border-t pt-6 flex justify-between items-center bg-muted/30 rounded-b-lg">
-              <Button variant="outline" onClick={() => setCurrentStep('step2')} className="px-6 py-3 text-base">&laquo; Back: Time & Context</Button>
-              <Button onClick={handleSubmit} disabled={isLoading} className="bg-primary hover:bg-primary/90 text-primary-foreground px-8 py-3 text-lg">
-                {isLoading ? <Loader2 className="mr-2 h-6 w-6 animate-spin" /> : <BarChartBig className="mr-2 h-6 w-6" />}
-                Generate Forecast
-              </Button>
-            </CardFooter>
-          </Card>
-        </TabsContent>
-      </Tabs>
-
-      {isLoading && (
-        <Card className="shadow-md animate-pulse border-border mt-8">
-            <CardHeader>
-                <Skeleton className="h-8 w-3/4 rounded-md" />
-                <Skeleton className="h-4 w-1/2 mt-2 rounded-md" />
-            </CardHeader>
-            <CardContent className="space-y-8 pt-6">
-                <Skeleton className="h-32 w-full rounded-lg" /> 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <Skeleton className="h-28 w-full rounded-lg" />
-                    <Skeleton className="h-28 w-full rounded-lg" />
-                    <Skeleton className="h-28 w-full rounded-lg" />
-                </div>
-                <Separator />
-                <Skeleton className="h-80 w-full rounded-lg" />
+            <CardContent className="space-y-2 text-sm">
+                <div className="flex justify-between"><span>Products Selected:</span> <span className="font-medium">{quickStats.products}</span></div>
+                <div className="flex justify-between"><span>Avg. Accuracy (Est.):</span> <span className="font-medium">{quickStats.avgAccuracy}%</span></div>
+                <div className="flex justify-between"><span>Total Units Forecasted:</span> <span className="font-medium">{quickStats.totalUnits.toLocaleString()}</span></div>
+                <div className="flex justify-between"><span>Total Forecast Value:</span> <span className="font-medium">${quickStats.totalValue.toLocaleString()}</span></div>
+                <Button className="w-full mt-3" size="sm" disabled={numSelected === 0}>
+                    <PlusCircle className="mr-2 h-4 w-4"/> Add to Report
+                </Button>
             </CardContent>
         </Card>
-      )}
-      
-      {generateForecastMutation.isError && !isLoading && (
-         <Alert variant="destructive" className="shadow-md border-destructive mt-8">
-            <Info className="h-5 w-5" />
-            <AlertTitle className="font-semibold text-lg">Error Generating Forecast</AlertTitle>
-            <AlertDescription className="text-base">
-              {generateForecastMutation.error?.message || "An unknown error occurred. Please check your inputs and try again."}
-            </AlertDescription>
-          </Alert>
-      )}
+    </div>
 
-      {displayForecast && !isLoading && (
-        <div className="space-y-8 mt-12 animate-fadeIn">
-          <Card className="shadow-xl border-primary bg-gradient-to-br from-primary/5 via-background to-background">
-            <CardHeader className="pb-2">
-              <CardTitle className="font-headline text-2xl text-foreground text-center">
-                Demand Forecast Summary for <span className="text-primary">{displayForecast.sku}</span>
-                 {scenarioForecastResult && <span className="text-orange-500 font-normal text-lg ml-2">(Scenario Applied)</span>}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-center space-y-3">
-              <div className="text-5xl font-bold text-primary">{summaryMetrics.next30DaysUnits} units</div>
-              <p className="text-muted-foreground text-lg">Forecasted for the Next 30 Days</p>
-              <div className="w-3/4 mx-auto pt-2">
-                 <Progress value={75} aria-label="75% of forecast period visualizer" className="h-3"/> 
-              </div>
-              <div className="flex justify-around items-center text-sm text-muted-foreground pt-2">
-                <span>📈 Trend: <span className="font-semibold text-foreground">{summaryMetrics.trend}</span> vs last month</span>
-                <span>⚡ Recommended Order By: <span className="font-semibold text-foreground">{summaryMetrics.orderDate}</span></span>
-              </div>
-            </CardContent>
-          </Card>
 
-          <section id="action-metrics" className="pt-4">
-            <h2 className="text-2xl font-headline font-semibold text-foreground mb-4 flex items-center">
-                <ThumbsUp className="h-6 w-6 mr-3 text-primary" /> Actionable Metrics
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <Card className="shadow-lg hover:shadow-xl transition-shadow">
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-lg font-semibold text-accent">Order Now</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <p className="text-3xl font-bold">450 units</p> 
-                        <p className="text-sm text-muted-foreground">To meet 30-day demand.</p>
-                    </CardContent>
-                    <CardFooter>
-                        <Button className="w-full bg-accent hover:bg-accent/90 text-accent-foreground">
-                            <ShoppingCart className="mr-2 h-4 w-4"/> Create Purchase Order
-                        </Button>
-                    </CardFooter>
-                </Card>
-                 <Card className="shadow-lg hover:shadow-xl transition-shadow">
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-lg font-semibold">Peak Demand Day</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <p className="text-3xl font-bold">March 22</p> 
-                        <p className="text-sm text-muted-foreground">Prepare staffing & stock.</p>
-                    </CardContent>
-                     <CardFooter>
-                        <Button variant="outline" className="w-full">View Daily Breakdown</Button>
-                    </CardFooter>
-                </Card>
-                 <Card className="shadow-lg hover:shadow-xl transition-shadow">
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-lg font-semibold text-warning">Risk Alert</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <p className="text-3xl font-bold flex items-center"><AlertTriangleIcon className="h-7 w-7 mr-2 text-warning"/>Low Stock</p> 
-                        <p className="text-sm text-muted-foreground">Potential stockout: April 5-7.</p>
-                    </CardContent>
-                     <CardFooter>
-                        <Button variant="outline" className="w-full border-warning text-warning hover:bg-warning/10">Review Inventory Levels</Button>
-                    </CardFooter>
-                </Card>
-            </div>
-          </section>
-            
-          <section id="forecast-chart" className="pt-4">
-             <h2 className="text-2xl font-headline font-semibold text-foreground mb-4 flex items-center">
-                <BarChart className="h-6 w-6 mr-3 text-primary" /> Detailed Forecast Chart
-            </h2>
-            <Card className="shadow-xl border-border">
-                <CardHeader className="pb-2">
-                    <CardTitle className="font-headline text-xl text-foreground">
-                    Demand Projection for SKU: <span className="text-primary">{displayForecast.sku}</span>
-                    </CardTitle>
-                    <CardDescription className="text-sm">
-                        Model: <span className="font-semibold text-accent">{VISUAL_MODELS.find(m=>m.id === displayForecast.modelUsed)?.title || displayForecast.modelUsed}</span>.
-                        {displayForecast.accuracyScore && ` Illustrative Accuracy: ${displayForecast.accuracyScore.toFixed(0)}%.`}
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="pt-2 h-[450px] relative"> 
-                     <Button variant="ghost" size="icon" className="absolute top-4 right-4 z-10" title="Expand Chart">
-                        <Maximize2 className="h-5 w-5" />
-                    </Button>
-                    <ForecastChart 
-                        historicalData={JSON.parse(historicalSalesData)} 
-                        baselinePredictions={forecastResult?.predictions ?? null}
-                        scenarioPredictions={scenarioForecastResult?.predictions ?? null}
-                    />
-                </CardContent>
-                 {(displayForecast.modelExplanation || displayForecast.predictions['30day'].explanation) && (
-                    <CardFooter className="pt-4 border-t">
-                         <Alert className="bg-blue-50 border-blue-300 dark:bg-blue-900/30 dark:border-blue-700/50 shadow w-full">
-                            <Lightbulb className="h-5 w-5 text-primary" />
-                            <AlertTitle className="font-semibold text-primary text-lg">AI Model Insights ({displayForecast.modelUsed.replace(/_/g, ' ')})</AlertTitle>
-                            {displayForecast.modelExplanation && <AlertDescription className="text-blue-700 dark:text-blue-300 text-base mt-1">{displayForecast.modelExplanation}</AlertDescription>}
-                        </Alert>
-                    </CardFooter>
-                 )}
-            </Card>
-          </section>
-
-          <ScenarioSimulator 
-            baselineForecast={forecastResult} 
-            onApplyScenario={setScenarioForecastResult} 
-          />
-          
-          <section id="model-comparison" className="pt-4">
-             <h2 className="text-2xl font-headline font-semibold text-foreground mb-4 flex items-center">
-                <SlidersHorizontal className="h-6 w-6 mr-3 text-primary" /> Model Comparison
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <Card className="shadow-md border-success/50 bg-success/5">
-                    <CardHeader><CardTitle className="text-lg font-semibold text-success flex items-center"><CheckCircle className="mr-2"/>Recommended: AI Model</CardTitle></CardHeader>
-                    <CardContent><p className="text-4xl font-bold">1,250 <span className="text-lg font-normal">units</span></p><p className="text-sm text-muted-foreground">92% accuracy (illustrative)</p></CardContent>
-                    <CardFooter><Button className="w-full bg-success hover:bg-success/90 text-success-foreground">Use This Model</Button></CardFooter>
-                </Card>
-                <Card className="shadow-md">
-                    <CardHeader><CardTitle className="text-lg font-semibold flex items-center"><Target className="mr-2 text-muted-foreground"/>Conservative: Historical</CardTitle></CardHeader>
-                    <CardContent><p className="text-4xl font-bold">1,100 <span className="text-lg font-normal">units</span></p><p className="text-sm text-muted-foreground">88% accuracy (illustrative)</p></CardContent>
-                    <CardFooter><Button variant="outline" className="w-full">Compare Details</Button></CardFooter>
-                </Card>
-                <Card className="shadow-md">
-                    <CardHeader><CardTitle className="text-lg font-semibold flex items-center"><TrendingUp className="mr-2 text-muted-foreground"/>Aggressive: Growth Model</CardTitle></CardHeader>
-                    <CardContent><p className="text-4xl font-bold">1,400 <span className="text-lg font-normal">units</span></p><p className="text-sm text-muted-foreground">85% accuracy (illustrative)</p></CardContent>
-                    <CardFooter><Button variant="outline" className="w-full">Compare Details</Button></CardFooter>
-                </Card>
-            </div>
-             <p className="text-xs text-muted-foreground mt-2 text-center">Full model comparison table and explorer coming soon.</p>
-          </section>
-
-          <section id="key-insights" className="pt-4">
-            <h2 className="text-2xl font-headline font-semibold text-foreground mb-4 flex items-center">
-                <Lightbulb className="h-6 w-6 mr-3 text-primary" /> Key Insights & Recommendations
-            </h2>
-            <Card className="shadow-lg">
-                <CardContent className="pt-6 text-base space-y-2">
-                    <ul className="list-disc list-inside space-y-1.5">
-                        <li>Demand is trending up <span className="font-semibold text-success">15% month-over-month</span> (Placeholder).</li>
-                        <li>Historical data shows <span className="font-semibold">Thursday & Friday</span> are peak sales days for this product.</li>
-                        <li>Consider a <span className="font-semibold">20% safety stock</span> increase for the upcoming Q4 holiday period due to observed seasonality.</li>
-                        <li>The <span className="font-semibold text-accent">{VISUAL_MODELS.find(m=>m.id === displayForecast.modelUsed)?.title || displayForecast.modelUsed}</span> model was selected for its ability to handle {displayForecast.modelUsed === "SEASONAL_DECOMPOSITION" ? "seasonal patterns." : displayForecast.modelUsed === "AI_PATTERN_RECOGNITION" ? "complex data signals." : "the data characteristics."}</li>
-                    </ul>
-                </CardContent>
-            </Card>
-          </section>
-
-          <section id="actions-footer" className="py-8 border-t mt-8">
-            <h2 className="text-2xl font-headline font-semibold text-foreground mb-6 text-center">Next Steps</h2>
-            <div className="flex flex-wrap justify-center gap-4">
-                <Button size="lg" variant="outline" className="text-base px-6 py-3"><UploadCloud className="mr-2"/> Save Forecast</Button>
-                <Button size="lg" variant="outline" className="text-base px-6 py-3"><BarChartHorizontalBig className="mr-2"/> Export Data</Button>
-                <Button size="lg" className="bg-accent hover:bg-accent/80 text-accent-foreground text-base px-6 py-3"><ShoppingCart className="mr-2"/> Create Purchase Order</Button>
-                <Button size="lg" variant="secondary" className="text-base px-6 py-3"><Zap className="mr-2"/> Email Report</Button>
-            </div>
-          </section>
-
-        </div>
-      )}
-        <Link href="/analytics/forecasting/bulk" className="block text-center mt-8 text-primary hover:underline">
-            Go to Bulk Forecasting &raquo;
-        </Link>
+      {/* Bottom Action Bar */}
+      <Card className="shadow-sm border-border mt-auto">
+        <CardContent className="p-2">
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <Button variant="outline" size="sm"><Download className="mr-1.5 h-3.5 w-3.5" /> Export All</Button>
+            <Button variant="outline" size="sm"><BarChart2 className="mr-1.5 h-3.5 w-3.5" /> Run Bulk Analysis</Button>
+            <Button variant="outline" size="sm"><Settings2 className="mr-1.5 h-3.5 w-3.5" /> Model Settings</Button>
+            <Button variant="outline" size="sm"><Save className="mr-1.5 h-3.5 w-3.5" /> Save View</Button>
+            <Button variant="outline" size="sm"><Mail className="mr-1.5 h-3.5 w-3.5" /> Schedule Report</Button>
+            <Button variant="default" size="sm" className="bg-primary hover:bg-primary/90"><RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Refresh Data</Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
-    
