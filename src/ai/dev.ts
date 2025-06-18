@@ -8,3 +8,4 @@ import '@/ai/flows/forecasting.ts';
 import '@/ai/flows/fileAnalysis.ts';
 import '@/ai/flows/reorderOptimization.ts';
 import '@/ai/flows/supplierAnalysis.ts';
+import '@/ai/flows/marketIntelligence.ts';
