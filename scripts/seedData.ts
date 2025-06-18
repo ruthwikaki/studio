@@ -4,7 +4,7 @@
 // Example: npx ts-node scripts/seedData.ts
 
 import * as admin from 'firebase-admin';
-import { Timestamp } from 'firebase-admin/firestore'; // Import Timestamp
+import type { Timestamp } from 'firebase-admin/firestore'; // Import Timestamp explicitly
 import type {
   CompanyDocument, UserDocument, ProductDocument, InventoryStockDocument,
   SupplierDocument, OrderDocument, SalesHistoryDocument, ForecastDocument,
@@ -295,7 +295,7 @@ const mockChatSessions: (Omit<ChatSessionDocument, 'id' | 'createdAt' | 'lastMes
     id: `chat_seed_${String(index + 1).padStart(3, '0')}`,
     companyId: MOCK_COMPANY_ID,
     ...chat,
-    messages: chat.messages.map(msg => ({...msg, timestamp: Timestamp.fromDate(new Date(Date.now() - (Math.random() * 3600 * 1000))) } as ChatMessage)),
+    messages: chat.messages.map(msg => ({...msg, timestamp: admin.firestore.Timestamp.fromDate(new Date(Date.now() - (Math.random() * 3600 * 1000))) } as ChatMessage)),
     createdAt: new Date(Date.now() - (index + 2) * 60 * 60 * 1000),
     lastMessageAt: new Date(Date.now() - (index + 1) * 59 * 60 * 1000),
 }));
@@ -309,30 +309,30 @@ async function seedDatabase() {
 
   console.log(`Seeding company: ${mockCompany.name}`);
   const companyDocRef = db.collection('companies').doc(mockCompany.id);
-  batch.set(companyDocRef, { ...mockCompany, createdAt: Timestamp.fromDate(mockCompany.createdAt) });
+  batch.set(companyDocRef, { ...mockCompany, createdAt: admin.firestore.Timestamp.fromDate(mockCompany.createdAt) });
 
   console.log(`Seeding ${mockUsers.length} users...`);
   mockUsers.forEach(user => {
     const userDocRef = db.collection('users').doc(user.uid);
-    batch.set(userDocRef, { ...user, createdAt: Timestamp.fromDate(user.createdAt) });
+    batch.set(userDocRef, { ...user, createdAt: admin.firestore.Timestamp.fromDate(user.createdAt) });
   });
 
   console.log(`Seeding ${mockProducts.length} products...`);
   mockProducts.forEach(product => {
     const productDocRef = db.collection('products').doc(product.id);
-    batch.set(productDocRef, { ...product, createdAt: Timestamp.fromDate(product.createdAt), lastUpdated: Timestamp.fromDate(product.lastUpdated) });
+    batch.set(productDocRef, { ...product, createdAt: admin.firestore.Timestamp.fromDate(product.createdAt), lastUpdated: admin.firestore.Timestamp.fromDate(product.lastUpdated) });
   });
   
   console.log(`Seeding ${mockInventoryStock.length} inventory stock records...`);
   mockInventoryStock.forEach(item => {
     const itemDocRef = db.collection('inventory').doc(item.id);
-    batch.set(itemDocRef, { ...item, lastUpdated: Timestamp.fromDate(item.lastUpdated) });
+    batch.set(itemDocRef, { ...item, lastUpdated: admin.firestore.Timestamp.fromDate(item.lastUpdated) });
   });
   
   console.log(`Seeding ${mockSuppliers.length} suppliers...`);
   mockSuppliers.forEach(supplier => {
     const supplierDocRef = db.collection('suppliers').doc(supplier.id);
-    batch.set(supplierDocRef, { ...supplier, createdAt: Timestamp.fromDate(supplier.createdAt), lastUpdated: Timestamp.fromDate(supplier.lastUpdated) });
+    batch.set(supplierDocRef, { ...supplier, createdAt: admin.firestore.Timestamp.fromDate(supplier.createdAt), lastUpdated: admin.firestore.Timestamp.fromDate(supplier.lastUpdated) });
   });
 
   console.log(`Seeding ${mockOrders.length} orders...`);
@@ -340,24 +340,24 @@ async function seedDatabase() {
     const orderDocRef = db.collection('orders').doc(order.id);
     batch.set(orderDocRef, {
          ...order, 
-         orderDate: Timestamp.fromDate(order.orderDate as Date), 
-         expectedDate: order.expectedDate ? Timestamp.fromDate(order.expectedDate as Date) : undefined,
-         actualDeliveryDate: order.actualDeliveryDate ? Timestamp.fromDate(order.actualDeliveryDate as Date) : undefined,
-         createdAt: Timestamp.fromDate(order.createdAt as Date), 
-         lastUpdated: Timestamp.fromDate(order.lastUpdated as Date)
+         orderDate: admin.firestore.Timestamp.fromDate(order.orderDate as Date), 
+         expectedDate: order.expectedDate ? admin.firestore.Timestamp.fromDate(order.expectedDate as Date) : undefined,
+         actualDeliveryDate: order.actualDeliveryDate ? admin.firestore.Timestamp.fromDate(order.actualDeliveryDate as Date) : undefined,
+         createdAt: admin.firestore.Timestamp.fromDate(order.createdAt as Date), 
+         lastUpdated: admin.firestore.Timestamp.fromDate(order.lastUpdated as Date)
     });
   });
 
   console.log(`Seeding ${mockSalesHistory.length} sales history records...`);
   mockSalesHistory.forEach(sh => {
     const shDocRef = db.collection('sales_history').doc(sh.id);
-    batch.set(shDocRef, { ...sh, date: Timestamp.fromDate(sh.date) });
+    batch.set(shDocRef, { ...sh, date: admin.firestore.Timestamp.fromDate(sh.date) });
   });
 
   console.log(`Seeding ${mockForecasts.length} forecasts...`);
   mockForecasts.forEach(fc => {
     const fcDocRef = db.collection('forecasts').doc(fc.id);
-    batch.set(fcDocRef, { ...fc, generatedAt: Timestamp.fromDate(fc.generatedAt) });
+    batch.set(fcDocRef, { ...fc, generatedAt: admin.firestore.Timestamp.fromDate(fc.generatedAt) });
   });
 
   console.log(`Seeding ${mockDocuments.length} document metadata entries...`);
@@ -365,8 +365,8 @@ async function seedDatabase() {
     const docRef = db.collection('documents').doc(doc.id);
     batch.set(docRef, { 
         ...doc, 
-        uploadedAt: Timestamp.fromDate(doc.uploadedAt), 
-        processedAt: doc.processedAt ? Timestamp.fromDate(doc.processedAt) : undefined 
+        uploadedAt: admin.firestore.Timestamp.fromDate(doc.uploadedAt), 
+        processedAt: doc.processedAt ? admin.firestore.Timestamp.fromDate(doc.processedAt) : undefined 
     });
   });
 
@@ -375,8 +375,9 @@ async function seedDatabase() {
     const chatRef = db.collection('chat_sessions').doc(chat.id);
     batch.set(chatRef, { 
         ...chat, 
-        createdAt: Timestamp.fromDate(chat.createdAt), 
-        lastMessageAt: Timestamp.fromDate(chat.lastMessageAt)
+        createdAt: admin.firestore.Timestamp.fromDate(chat.createdAt), 
+        lastMessageAt: admin.firestore.Timestamp.fromDate(chat.lastMessageAt)
+        // messages are already Timestamps
     });
   });
 
@@ -398,6 +399,4 @@ async function seedDatabase() {
 }
 
 seedDatabase().catch(console.error);
-    
-
     
