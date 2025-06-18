@@ -17,6 +17,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
 import ConfidenceIndicator from '@/components/analytics/forecasting/ConfidenceIndicator';
+import { Separator } from '@/components/ui/separator';
 
 // Sample historical data for placeholder
 const SAMPLE_HISTORICAL_DATA = JSON.stringify([
@@ -79,75 +80,74 @@ export default function ForecastingPage() {
     return (demand / days).toFixed(1);
   };
 
-  const getTotalPredictedUnits = () => {
+  const getTotalPredictedUnits = (period: '30day' | '60day' | '90day') => {
     if (!forecastResult) return "N/A";
-    // The '90day' demand is cumulative for the 90-day period as per the flow's intent.
-    return forecastResult.predictions['90day'].demand.toLocaleString();
+    return forecastResult.predictions[period].demand.toLocaleString();
   }
 
   return (
-    <div className="flex flex-col gap-8">
-      <Card className="shadow-lg">
+    <div className="flex flex-col gap-8 py-6">
+      <Card className="shadow-xl border-border">
         <CardHeader>
-          <CardTitle className="font-headline text-2xl flex items-center">
-            <TrendingUp className="h-6 w-6 mr-2 text-primary" />
+          <CardTitle className="font-headline text-2xl flex items-center text-foreground">
+            <TrendingUp className="h-7 w-7 mr-3 text-primary" />
             Demand Forecasting Engine
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-base">
             Input product details and historical sales to generate future demand predictions using AI.
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
-          <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <CardContent className="space-y-6 pt-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
               <div>
-                <Label htmlFor="sku" className="font-medium">Product SKU</Label>
+                <Label htmlFor="sku" className="font-medium text-foreground">Product SKU</Label>
                 <Input
                   id="sku"
                   value={sku}
                   onChange={(e) => setSku(e.target.value)}
                   placeholder="Enter product SKU (e.g., TSHIRT-BLUE-L)"
                   required
-                  className="mt-1"
+                  className="mt-1 bg-background"
                 />
-                 <p className="text-xs text-muted-foreground mt-1">
+                 <p className="text-xs text-muted-foreground mt-1.5">
                   Future: Searchable dropdown from your inventory.
                 </p>
               </div>
                <div>
-                <Label htmlFor="seasonalityFactors" className="font-medium">Seasonality Factors & Market Conditions</Label>
+                <Label htmlFor="seasonalityFactors" className="font-medium text-foreground">Seasonality Factors & Market Conditions</Label>
                 <Input
                   id="seasonalityFactors"
                   value={seasonalityFactors}
                   onChange={(e) => setSeasonalityFactors(e.target.value)}
                   placeholder="e.g., Summer peak, Q4 holiday promotion, new competitor"
-                  className="mt-1"
+                  className="mt-1 bg-background"
                 />
-                 <p className="text-xs text-muted-foreground mt-1">
+                 <p className="text-xs text-muted-foreground mt-1.5">
                   Describe any known events or trends that might impact demand.
                 </p>
               </div>
             </div>
             <div>
-              <Label htmlFor="historicalSalesData" className="font-medium">Historical Sales Data (JSON)</Label>
+              <Label htmlFor="historicalSalesData" className="font-medium text-foreground">Historical Sales Data (JSON)</Label>
               <Textarea
                 id="historicalSalesData"
                 value={historicalSalesData}
                 onChange={(e) => setHistoricalSalesData(e.target.value)}
                 placeholder='[{"date": "YYYY-MM-DD", "quantitySold": number}, ...]'
                 rows={10}
-                className="font-mono text-xs mt-1"
+                className="font-mono text-xs mt-1 bg-background"
                 required
               />
-              <p className="text-xs text-muted-foreground mt-1">
+              <p className="text-xs text-muted-foreground mt-1.5">
                 Provide historical sales as a JSON array. Each object needs a "date" (YYYY-MM-DD) and "quantitySold" (number).
                 Future: Auto-fetch based on SKU, CSV upload, or manual table input.
               </p>
             </div>
           </CardContent>
-          <CardFooter className="border-t pt-6 flex justify-between items-center">
-            <Button type="submit" disabled={isLoading} className="bg-accent hover:bg-accent/90 text-accent-foreground">
-              {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BarChartBig className="mr-2 h-4 w-4" />}
+          <CardFooter className="border-t pt-6 flex justify-between items-center bg-muted/30 rounded-b-lg">
+            <Button type="submit" disabled={isLoading} className="bg-primary hover:bg-primary/90 text-primary-foreground px-6 py-3 text-base">
+              {isLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <BarChartBig className="mr-2 h-5 w-5" />}
               Generate Forecast
             </Button>
              <Link href="/analytics/forecasting/bulk" className="text-sm text-primary hover:underline">
@@ -158,97 +158,109 @@ export default function ForecastingPage() {
       </Card>
 
       {isLoading && (
-        <Card className="shadow-md animate-pulse">
+        <Card className="shadow-md animate-pulse border-border">
             <CardHeader>
-                <Skeleton className="h-8 w-3/4" />
-                <Skeleton className="h-4 w-1/2 mt-1" />
+                <Skeleton className="h-8 w-3/4 rounded-md" />
+                <Skeleton className="h-4 w-1/2 mt-2 rounded-md" />
             </CardHeader>
-            <CardContent className="space-y-6">
-                <Skeleton className="h-72 w-full rounded-lg" />
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <CardContent className="space-y-8 pt-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     <Skeleton className="h-28 w-full rounded-lg" />
                     <Skeleton className="h-28 w-full rounded-lg" />
+                    <Skeleton className="h-28 w-full rounded-lg" />
+                    <Skeleton className="h-28 w-full rounded-lg md:col-span-2 lg:col-span-1" />
                     <Skeleton className="h-28 w-full rounded-lg" />
                     <Skeleton className="h-28 w-full rounded-lg" />
                 </div>
+                <Skeleton className="h-80 w-full rounded-lg" />
+                 <Skeleton className="h-20 w-full rounded-lg" />
             </CardContent>
         </Card>
       )}
       
       {generateForecastMutation.isError && !isLoading && (
-         <Alert variant="destructive" className="shadow-md">
+         <Alert variant="destructive" className="shadow-md border-destructive">
             <Info className="h-5 w-5" />
-            <AlertTitle className="font-semibold">Error Generating Forecast</AlertTitle>
-            <AlertDescription>
+            <AlertTitle className="font-semibold text-lg">Error Generating Forecast</AlertTitle>
+            <AlertDescription className="text-base">
               {generateForecastMutation.error?.message || "An unknown error occurred. Please check your inputs and try again."}
             </AlertDescription>
           </Alert>
       )}
 
       {forecastResult && !isLoading && (
-        <Card className="shadow-xl">
-          <CardHeader>
-            <CardTitle className="font-headline text-xl text-foreground">Forecast Results for SKU: {forecastResult.sku}</CardTitle>
-            <CardDescription>Predictions and insights based on the data provided.</CardDescription>
+        <Card className="shadow-xl border-border">
+          <CardHeader className="pb-4">
+            <CardTitle className="font-headline text-2xl text-foreground">Forecast Results for SKU: <span className="text-primary">{forecastResult.sku}</span></CardTitle>
+            <CardDescription className="text-base">Predictions and insights based on the data provided.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-8">
+          <Separator />
+          <CardContent className="pt-6 space-y-8">
             
-            <div>
-              <h3 className="text-lg font-semibold mb-3 text-foreground flex items-center">
-                <BarChartHorizontalBig className="h-5 w-5 mr-2 text-primary" />
+            <section>
+              <h3 className="text-xl font-semibold mb-4 text-foreground flex items-center">
+                <BarChartHorizontalBig className="h-6 w-6 mr-2 text-primary" />
                 Key Metrics
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <ForecastMetricCard title="30-Day Forecast" value={forecastResult.predictions['30day'].demand.toLocaleString()} description={<ConfidenceIndicator level={forecastResult.predictions['30day'].confidence} />} />
-                <ForecastMetricCard title="60-Day Forecast" value={forecastResult.predictions['60day'].demand.toLocaleString()} description={<ConfidenceIndicator level={forecastResult.predictions['60day'].confidence} />} />
-                <ForecastMetricCard title="90-Day Forecast" value={forecastResult.predictions['90day'].demand.toLocaleString()} description={<ConfidenceIndicator level={forecastResult.predictions['90day'].confidence} />} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <ForecastMetricCard title="30-Day Forecast" value={getTotalPredictedUnits('30day')} description={<ConfidenceIndicator level={forecastResult.predictions['30day'].confidence} />} />
+                <ForecastMetricCard title="60-Day Forecast" value={getTotalPredictedUnits('60day')} description={<ConfidenceIndicator level={forecastResult.predictions['60day'].confidence} />} />
+                <ForecastMetricCard title="90-Day Forecast" value={getTotalPredictedUnits('90day')} description={<ConfidenceIndicator level={forecastResult.predictions['90day'].confidence} />} />
                 <ForecastMetricCard title="Avg. Daily Demand (30d)" value={getAverageDemand('30day')} description="Approximate daily average" />
-                <ForecastMetricCard title="Total Predicted (90d)" value={getTotalPredictedUnits()} description="Total units for next 90 days" />
-                <ForecastMetricCard title="Confidence Score (90d)" value={<ConfidenceIndicator level={forecastResult.predictions['90day'].confidence} />} description="Overall confidence for the longest period" />
-                <ForecastMetricCard title="Peak Demand" value="N/A" description="Date/Period (Future)" />
-                <ForecastMetricCard title="Rec. Reorder Qty" value="N/A" description="Based on this forecast (Future)" />
+                <ForecastMetricCard title="Total Predicted (90d)" value={getTotalPredictedUnits('90day')} description="Total units for next 90 days" />
+                <ForecastMetricCard title="Confidence (90d)" value={<ConfidenceIndicator level={forecastResult.predictions['90day'].confidence} />} description="Overall confidence for 90d" />
               </div>
-            </div>
+            </section>
+            
+            <Separator />
 
-            <div>
-              <h3 className="text-lg font-semibold mb-3 text-foreground flex items-center">
-                <TrendingUp className="h-5 w-5 mr-2 text-primary" />
+            <section>
+              <h3 className="text-xl font-semibold mb-4 text-foreground flex items-center">
+                <TrendingUp className="h-6 w-6 mr-2 text-primary" />
                 Demand Projection Chart
                 </h3>
               <ForecastChart historicalData={JSON.parse(historicalSalesData)} predictions={forecastResult.predictions} />
-            </div>
+            </section>
             
             {forecastResult.predictions['30day'].explanation && (
-                <Alert className="bg-blue-50 border-blue-200 dark:bg-blue-900/30 dark:border-blue-700">
-                    <Lightbulb className="h-5 w-5 text-primary" />
-                    <AlertTitle className="font-semibold text-primary">AI Explanation (30-day Forecast)</AlertTitle>
-                    <AlertDescription className="text-blue-700 dark:text-blue-300">{forecastResult.predictions['30day'].explanation}</AlertDescription>
-                </Alert>
+              <>
+                <Separator />
+                <section>
+                    <Alert className="bg-blue-50 border-blue-300 dark:bg-blue-900/30 dark:border-blue-700/50 shadow">
+                        <Lightbulb className="h-5 w-5 text-primary" />
+                        <AlertTitle className="font-semibold text-primary text-lg">AI Explanation (30-day Forecast)</AlertTitle>
+                        <AlertDescription className="text-blue-700 dark:text-blue-300 text-base mt-1">{forecastResult.predictions['30day'].explanation}</AlertDescription>
+                    </Alert>
+                </section>
+               </>
              )}
+            
+            <Separator />
 
-            <div>
-              <h3 className="text-lg font-semibold mb-3 text-foreground flex items-center">
-                <CalendarClock className="h-5 w-5 mr-2 text-primary" />
-                Forecast Details Table
+            <section>
+              <h3 className="text-xl font-semibold mb-4 text-foreground flex items-center">
+                <CalendarClock className="h-6 w-6 mr-2 text-primary" />
+                Forecast Details & Actions
               </h3>
-               <div className="p-6 border rounded-lg bg-muted/30 text-center">
-                 <p className="text-muted-foreground">A detailed table with daily/weekly breakdown, min-max range, confidence percentages, and recommended actions is a planned feature.</p>
-                 <Button variant="outline" size="sm" className="mt-3" disabled>Export Details to CSV (Coming Soon)</Button>
+               <div className="p-6 border rounded-lg bg-muted/30 text-center min-h-[150px] flex flex-col justify-center items-center">
+                 <p className="text-muted-foreground text-base">A detailed table with daily/weekly breakdown, min-max range, confidence percentages, and recommended actions is a planned feature.</p>
+                 <Button variant="outline" size="lg" className="mt-4 text-base" disabled>Export Details to CSV (Coming Soon)</Button>
                </div>
-            </div>
+            </section>
           </CardContent>
         </Card>
       )}
 
-      <Card className="shadow-lg">
+      <Card className="shadow-lg border-border">
         <CardHeader>
-          <CardTitle className="font-headline text-xl text-foreground">Scenario Analysis (What-If Simulator)</CardTitle>
-          <CardDescription>Explore how different factors might impact your forecast. (Feature in development)</CardDescription>
+          <CardTitle className="font-headline text-2xl text-foreground">Scenario Analysis (What-If Simulator)</CardTitle>
+          <CardDescription className="text-base">Explore how different factors might impact your forecast. (Feature in development)</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-2">
           <ScenarioSimulator />
         </CardContent>
       </Card>
     </div>
   );
 }
+
