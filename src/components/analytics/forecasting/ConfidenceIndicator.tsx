@@ -9,30 +9,43 @@ interface ConfidenceIndicatorProps {
 }
 
 export default function ConfidenceIndicator({ level, showText = true }: ConfidenceIndicatorProps) {
-  let variant: "default" | "secondary" | "destructive" = "secondary";
+  let variant: "default" | "secondary" | "destructive" | "outline" = "outline"; // Default to outline for unknown
   let Icon = ShieldQuestion;
+  let iconColor = "text-muted-foreground";
+  let badgeClasses = "bg-muted/50 border-muted-foreground/30 hover:bg-muted/70";
 
   if (level === 'High') {
-    variant = "default"; // Greenish
+    variant = "default"; // Shadcn 'default' can be styled as success
     Icon = ShieldCheck;
+    iconColor = "text-success";
+    badgeClasses = "bg-success/10 text-success border-success/30 hover:bg-success/20";
   } else if (level === 'Medium') {
-    variant = "secondary"; // Yellowish/Orangish
+    variant = "secondary"; // Shadcn 'secondary' can be styled as warning
     Icon = ShieldAlert;
+    iconColor = "text-orange-500"; // More distinct orange
+    badgeClasses = "bg-warning/10 text-orange-500 dark:text-orange-400 border-warning/30 hover:bg-warning/20";
   } else if (level === 'Low') {
-    variant = "destructive"; // Reddish
-    Icon = ShieldAlert; // Could be a different icon for low
+    variant = "destructive";
+    Icon = ShieldAlert; // Or a different icon if desired for low, e.g. ShieldX
+    iconColor = "text-destructive";
+    badgeClasses = "bg-destructive/10 text-destructive border-destructive/30 hover:bg-destructive/20";
   }
   
   return (
-    <Badge variant={variant} className={cn(
-        "flex items-center gap-1.5 text-xs",
-        level === 'High' && "bg-success/10 text-success border-success/30 hover:bg-success/20",
-        level === 'Medium' && "bg-warning/10 text-orange-600 dark:text-orange-400 border-warning/30 hover:bg-warning/20", // Custom styling for warning to be more orange
-        level === 'Low' && "bg-destructive/10 text-destructive border-destructive/30 hover:bg-destructive/20",
-        !showText && "px-1.5 py-1"
-    )}>
-      <Icon className={cn("h-3.5 w-3.5", !showText && "h-4 w-4")} />
-      {showText && `${level} Confidence`}
+    <Badge 
+        variant={variant} 
+        className={cn(
+            "flex items-center gap-1.5 text-xs font-medium",
+            badgeClasses,
+            !showText && "px-1.5 py-1" // Compact padding if only icon
+        )}
+    >
+      <Icon className={cn(
+          "h-3.5 w-3.5", 
+          iconColor,
+          !showText && "h-4 w-4" // Slightly larger icon if no text
+        )} />
+      {showText && <span>{level} Confidence</span>}
     </Badge>
   );
 }
