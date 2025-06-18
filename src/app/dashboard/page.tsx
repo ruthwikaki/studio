@@ -1,31 +1,29 @@
 
+"use client";
+
 import DashboardCard from "@/components/dashboard/DashboardCard";
 import { 
   AlertTriangle, 
-  Archive, 
-  PackageX, 
-  ListOrdered, 
   DollarSign,
-  ClipboardList, // For Pending Orders
-  UploadCloud, // For Upload Inventory
-  FilePlus2, // For Create PO
-  MessageCircle, // For Chat with AI
-  ListChecks, // For Recent Activity
-  TrendingUp, // For Inventory Turnover
-  Award, // For Top Products
-  Bell // For View Alerts (can also be AlertCircle)
+  ClipboardList,
+  UploadCloud,
+  FilePlus2,
+  MessageCircle,
+  ListChecks,
+  TrendingUp,
+  Award,
+  Bell,
+  Loader2
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import Image from "next/image";
+import { useAnalyticsDashboard } from "@/hooks/useAnalytics";
+import { useRouter } from "next/navigation";
+import { useToast } from "@/hooks/use-toast";
+import { Skeleton } from "@/components/ui/skeleton";
 
-const lowStockItemsCount = 2; // Example data
-const overStockItemsCount = 2; // Example data
-const pendingOrdersCount = 5;
-const todaysRevenue = "$1,250.00";
 
 const recentActivities = [
   { id: 1, type: "Inventory Update", description: "SKU001 quantity changed to 145", time: "2m ago" },
@@ -35,41 +33,72 @@ const recentActivities = [
 ];
 
 export default function DashboardPage() {
+  const router = useRouter();
+  const { toast } = useToast();
+  const { data: kpiData, isLoading: kpisLoading, isError: kpisError, error: kpisFetchError } = useAnalyticsDashboard({ refetchInterval: 30000 });
+
+  const handleViewAlerts = async () => {
+    toast({ title: "Fetching Alerts...", description: "This may take a moment." });
+    try {
+      const response = await fetch('/api/inventory/alerts');
+      if (!response.ok) throw new Error('Failed to fetch alerts');
+      const result = await response.json();
+      // For now, just toast the number of alerts. A modal/dedicated page would show details.
+      const alertCount = result.data?.length || 0;
+      toast({ title: "Inventory Alerts", description: `Found ${alertCount} item(s) needing attention.` });
+    } catch (err: any) {
+      toast({ title: "Error Fetching Alerts", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const kpis = kpiData?.data;
+
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-3xl font-headline font-semibold text-foreground">Dashboard Overview</h1>
       
-      {/* KPI Cards */}
+      {kpisError && <p className="text-destructive">Error loading KPIs: {kpisFetchError?.message}</p>}
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <DashboardCard
-          title="Total Inventory Value"
-          icon={DollarSign}
-          value="$125,430.50"
-          description="+5.2% from last month"
-        />
-        <DashboardCard
-          title="Low Stock Items"
-          icon={AlertTriangle}
-          value={lowStockItemsCount}
-          description="Needs immediate attention"
-          valueClassName="text-warning"
-        />
-        <DashboardCard
-          title="Pending Orders"
-          icon={ClipboardList}
-          value={pendingOrdersCount}
-          description="Awaiting fulfillment"
-        />
-        <DashboardCard
-          title="Today's Revenue"
-          icon={DollarSign}
-          value={todaysRevenue}
-          description="Track daily sales"
-          valueClassName="text-success"
-        />
+        {kpisLoading ? (
+          <>
+            <DashboardCard title="Total Inventory Value"><Skeleton className="h-8 w-3/4 mt-1" /><Skeleton className="h-4 w-1/2 mt-1" /></DashboardCard>
+            <DashboardCard title="Low Stock Items"><Skeleton className="h-8 w-1/2 mt-1" /><Skeleton className="h-4 w-3/4 mt-1" /></DashboardCard>
+            <DashboardCard title="Pending Orders"><Skeleton className="h-8 w-1/2 mt-1" /><Skeleton className="h-4 w-1/2 mt-1" /></DashboardCard>
+            <DashboardCard title="Today's Revenue"><Skeleton className="h-8 w-3/4 mt-1" /><Skeleton className="h-4 w-1/2 mt-1" /></DashboardCard>
+          </>
+        ) : (
+          <>
+            <DashboardCard
+              title="Total Inventory Value"
+              icon={DollarSign}
+              value={kpis?.totalInventoryValue ? `$${kpis.totalInventoryValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : "N/A"}
+              description={kpis?.turnoverRate ? `Turnover: ${kpis.turnoverRate}` : "Calculating..."}
+            />
+            <DashboardCard
+              title="Low Stock Items"
+              icon={AlertTriangle}
+              value={kpis?.lowStockItemsCount ?? "N/A"}
+              description="Needs immediate attention"
+              valueClassName="text-warning"
+            />
+             <DashboardCard
+              title="Out of Stock Items"
+              icon={AlertTriangle}
+              value={kpis?.outOfStockItemsCount ?? "N/A"}
+              description="Critical - restock now"
+              valueClassName="text-destructive"
+            />
+            <DashboardCard
+              title="Pending Orders" /* Placeholder */
+              icon={ClipboardList}
+              value={5}
+              description="Awaiting fulfillment"
+            />
+          </>
+        )}
       </div>
 
-      {/* Quick Actions & Recent Activity */}
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-1 shadow-lg">
           <CardHeader>
@@ -88,7 +117,7 @@ export default function DashboardPage() {
                 <span className="text-xs">Create PO</span>
               </Link>
             </Button>
-            <Button variant="outline" className="h-auto py-3 flex-col gap-1">
+            <Button variant="outline" className="h-auto py-3 flex-col gap-1" onClick={handleViewAlerts}>
               <Bell className="h-5 w-5 text-warning" />
               <span className="text-xs">View Alerts</span>
             </Button>
@@ -109,6 +138,7 @@ export default function DashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
+            {/* Placeholder for Firestore real-time listener feed */}
             {recentActivities.length > 0 ? (
               <ul className="space-y-3">
                 {recentActivities.map((activity) => (
@@ -123,11 +153,11 @@ export default function DashboardPage() {
             ) : (
               <p className="text-sm text-muted-foreground">No recent activity to display. System alerts and updates will appear here.</p>
             )}
+             <p className="text-xs text-muted-foreground mt-4">Real-time activity feed using Firestore listeners is a planned feature.</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Mini Analytics Charts */}
       <div className="grid gap-6 md:grid-cols-2">
         <Card className="shadow-lg">
           <CardHeader>
@@ -137,6 +167,8 @@ export default function DashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col items-center justify-center text-center min-h-[200px]">
+            {kpisLoading ? <Loader2 className="h-8 w-8 animate-spin text-primary" /> : 
+            kpis?.turnoverRate ? <p className="text-4xl font-bold text-primary">{kpis.turnoverRate.toFixed(1)}x</p> :
             <Image 
               src="https://placehold.co/300x150.png" 
               alt="Inventory turnover chart placeholder" 
@@ -145,7 +177,8 @@ export default function DashboardPage() {
               data-ai-hint="line graph"
               className="rounded-md shadow-sm mb-3"
             />
-            <p className="text-sm text-muted-foreground">Inventory turnover rate chart coming soon.</p>
+            }
+            <p className="text-sm text-muted-foreground mt-2">{kpisLoading ? "Loading..." : kpis?.turnoverRate ? "Calculated turnover rate" : "Inventory turnover rate chart coming soon."}</p>
           </CardContent>
         </Card>
 
@@ -157,6 +190,7 @@ export default function DashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="min-h-[200px]">
+             {/* Placeholder - this would ideally come from API/analytics hook */}
             <p className="text-sm text-muted-foreground mb-2">Product value breakdown:</p>
             <ul className="space-y-2 text-sm">
               {["Product A - $15,000", "Product B - $12,500", "Product C - $9,800", "Product D - $7,200", "Product E - $5,500"].map(item => (

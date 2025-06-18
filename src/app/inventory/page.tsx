@@ -1,22 +1,29 @@
 
 "use client";
-import { useState } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { FileDown, Filter, MoreHorizontal, PlusCircle, Trash2, Edit3, UploadCloud } from 'lucide-react';
-import type { InventoryItem } from '@/lib/types';
-import { MOCK_INVENTORY_DATA } from '@/lib/constants'; // Using mock data
+import { FileDown, Filter, MoreHorizontal, PlusCircle, Trash2, Edit3, UploadCloud, Loader2 } from 'lucide-react';
+import type { InventoryItemDocument } from '@/lib/types/firestore';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { useInventory, useUpdateInventoryItem } from '@/hooks/useInventory';
+import { Skeleton } from '@/components/ui/skeleton';
 
-const calculateStockValue = (item: InventoryItem) => item.quantity * item.unitCost;
+const calculateStockValue = (item: InventoryItemDocument) => item.quantity * item.unitCost;
 
-const getStatusBadgeVariant = (status: InventoryItem['status']) => {
+const getStatus = (item: InventoryItemDocument): 'In Stock' | 'Low Stock' | 'Out of Stock' => {
+  if (item.quantity <= 0) return 'Out of Stock';
+  if (item.quantity <= item.reorderPoint) return 'Low Stock';
+  return 'In Stock';
+};
+
+const getStatusBadgeVariant = (status: 'In Stock' | 'Low Stock' | 'Out of Stock') => {
   switch (status) {
     case 'In Stock': return 'bg-success/20 text-success-foreground border-success/30';
     case 'Low Stock': return 'bg-warning/20 text-warning-foreground border-warning/30';
@@ -25,33 +32,90 @@ const getStatusBadgeVariant = (status: InventoryItem['status']) => {
   }
 };
 
+// Debounce function
+const debounce = <F extends (...args: any[]) => any>(func: F, waitFor: number) => {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  return (...args: Parameters<F>): Promise<ReturnType<F>> =>
+    new Promise(resolve => {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      timeout = setTimeout(() => resolve(func(...args)), waitFor);
+    });
+};
+
 
 export default function InventoryPage() {
-  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>(MOCK_INVENTORY_DATA.map(item => ({
-    ...item,
-    status: item.quantity <= item.reorderPoint ? (item.quantity === 0 ? 'Out of Stock' : 'Low Stock') : 'In Stock'
-  })));
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
+  const [editingCell, setEditingCell] = useState<{ sku: string; field: 'quantity' | 'reorderPoint' } | null>(null);
+  const [editValue, setEditValue] = useState<string | number>('');
+
   const { toast } = useToast();
 
+  const inventoryFilters = useMemo(() => ({
+    searchTerm: debouncedSearchTerm,
+    category: filterCategory,
+    lowStockOnly: false, // Add UI for this if needed
+  }), [debouncedSearchTerm, filterCategory]);
 
-  const filteredItems = inventoryItems.filter(item => {
-    const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) || item.id.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = filterCategory === 'all' || item.category === filterCategory;
-    return matchesSearch && matchesCategory;
-  });
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    isError,
+    error,
+  } = useInventory(inventoryFilters);
 
-  const handleInlineEdit = (itemId: string, field: keyof InventoryItem, value: string | number) => {
-    // Placeholder for actual update logic
-    toast({
-        title: "Inline Edit",
-        description: `Field ${String(field)} for item ${itemId} would be updated to ${value}. (Demo only)`,
-    });
+  const updateItemMutation = useUpdateInventoryItem();
+
+  const debouncedSetSearchTerm = useCallback(debounce(setDebouncedSearchTerm, 300), []);
+
+  useEffect(() => {
+    debouncedSetSearchTerm(searchTerm);
+  }, [searchTerm, debouncedSetSearchTerm]);
+
+  const allItems = useMemo(() => data?.pages.flatMap(page => page.data) ?? [], [data]);
+  
+  // Assuming categories are dynamic and can be extracted from items or a separate API call
+  // For now, this is simplified. In a real app, fetch categories separately.
+  const categories = useMemo(() => {
+    const uniqueCategories = new Set(allItems.map(item => item.category).filter(Boolean) as string[]);
+    return Array.from(uniqueCategories);
+  }, [allItems]);
+
+
+  const handleInlineEditStart = (item: InventoryItemDocument, field: 'quantity' | 'reorderPoint') => {
+    setEditingCell({ sku: item.sku, field });
+    setEditValue(item[field] ?? '');
+  };
+
+  const handleInlineEditChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setEditValue(e.target.value);
+  };
+
+  const handleInlineEditSubmit = async () => {
+    if (!editingCell) return;
+    const numericValue = parseInt(String(editValue), 10);
+    if (isNaN(numericValue) || numericValue < 0) {
+      toast({ title: "Invalid Input", description: `${editingCell.field} must be a non-negative number.`, variant: "destructive"});
+      return;
+    }
+    
+    try {
+      await updateItemMutation.mutateAsync({ sku: editingCell.sku, data: { [editingCell.field]: numericValue } });
+      setEditingCell(null);
+    } catch (e) {
+      // Error is handled by useMutation's onError
+    }
   };
   
-  const categories = Array.from(new Set(MOCK_INVENTORY_DATA.map(item => item.category || "Uncategorized")));
-
+  if (isError) {
+    return <div className="text-destructive-foreground bg-destructive p-4 rounded-md">Error loading inventory: {error?.message}</div>;
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -94,7 +158,7 @@ export default function InventoryPage() {
             </div>
           </div>
            <CardDescription>
-            Sortable columns and inline editing for quantity/reorder points are mock implementations.
+            Click on Quantity or Reorder Point cells to edit. Bulk actions are placeholders.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -125,22 +189,70 @@ export default function InventoryPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredItems.length > 0 ? filteredItems.map((item) => (
+                {isLoading && !data ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <TableRow key={`skeleton-${i}`}>
+                      <TableCell><Skeleton className="h-5 w-[80px]" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-[150px]" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-[100px]" /></TableCell>
+                      <TableCell className="text-right"><Skeleton className="h-5 w-[50px] ml-auto" /></TableCell>
+                      <TableCell className="text-right"><Skeleton className="h-5 w-[60px] ml-auto" /></TableCell>
+                      <TableCell className="text-right"><Skeleton className="h-5 w-[70px] ml-auto" /></TableCell>
+                      <TableCell className="text-right"><Skeleton className="h-5 w-[50px] ml-auto" /></TableCell>
+                      <TableCell className="text-center"><Skeleton className="h-5 w-[80px] mx-auto" /></TableCell>
+                      <TableCell className="text-right"><Skeleton className="h-8 w-8 ml-auto" /></TableCell>
+                    </TableRow>
+                  ))
+                ) : allItems.length > 0 ? allItems.map((item) => {
+                  const status = getStatus(item);
+                  return (
                   <TableRow key={item.id}>
-                    <TableCell className="font-medium">{item.id}</TableCell>
+                    <TableCell className="font-medium">{item.sku}</TableCell>
                     <TableCell>{item.name}</TableCell>
                     <TableCell className="text-muted-foreground">{item.category || 'N/A'}</TableCell>
-                    <TableCell className="text-right hover:bg-muted/50 cursor-pointer" onClick={() => handleInlineEdit(item.id, 'quantity', item.quantity)}>
-                        {item.quantity}
+                    <TableCell 
+                      className="text-right hover:bg-muted/50 cursor-pointer" 
+                      onClick={() => handleInlineEditStart(item, 'quantity')}
+                    >
+                      {editingCell?.sku === item.sku && editingCell?.field === 'quantity' ? (
+                        <Input
+                          type="number"
+                          value={editValue}
+                          onChange={handleInlineEditChange}
+                          onBlur={handleInlineEditSubmit}
+                          onKeyDown={(e) => e.key === 'Enter' && handleInlineEditSubmit()}
+                          autoFocus
+                          className="w-20 text-right h-8"
+                          disabled={updateItemMutation.isPending}
+                        />
+                      ) : (
+                        item.quantity
+                      )}
                     </TableCell>
                     <TableCell className="text-right">${item.unitCost.toFixed(2)}</TableCell>
                     <TableCell className="text-right">${calculateStockValue(item).toFixed(2)}</TableCell>
-                     <TableCell className="text-right hover:bg-muted/50 cursor-pointer" onClick={() => handleInlineEdit(item.id, 'reorderPoint', item.reorderPoint)}>
-                        {item.reorderPoint}
+                    <TableCell 
+                      className="text-right hover:bg-muted/50 cursor-pointer"
+                      onClick={() => handleInlineEditStart(item, 'reorderPoint')}
+                    >
+                       {editingCell?.sku === item.sku && editingCell?.field === 'reorderPoint' ? (
+                        <Input
+                          type="number"
+                          value={editValue}
+                          onChange={handleInlineEditChange}
+                          onBlur={handleInlineEditSubmit}
+                          onKeyDown={(e) => e.key === 'Enter' && handleInlineEditSubmit()}
+                          autoFocus
+                          className="w-20 text-right h-8"
+                           disabled={updateItemMutation.isPending}
+                        />
+                      ) : (
+                        item.reorderPoint
+                      )}
                     </TableCell>
                     <TableCell className="text-center">
-                      <span className={cn("px-2 py-0.5 text-xs rounded-full border font-medium", getStatusBadgeVariant(item.status))}>
-                        {item.status}
+                      <span className={cn("px-2 py-0.5 text-xs rounded-full border font-medium", getStatusBadgeVariant(status))}>
+                        {status}
                       </span>
                     </TableCell>
                     <TableCell className="text-right">
@@ -159,7 +271,7 @@ export default function InventoryPage() {
                         </DropdownMenu>
                     </TableCell>
                   </TableRow>
-                )) : (
+                )}) : (
                   <TableRow>
                     <TableCell colSpan={9} className="h-24 text-center">
                       No inventory items found. Try adjusting your search or filters.
@@ -169,6 +281,18 @@ export default function InventoryPage() {
               </TableBody>
             </Table>
           </div>
+          {hasNextPage && (
+            <div className="mt-6 flex justify-center">
+              <Button
+                onClick={() => fetchNextPage()}
+                disabled={isFetchingNextPage || !hasNextPage}
+                variant="outline"
+              >
+                {isFetchingNextPage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Load More
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

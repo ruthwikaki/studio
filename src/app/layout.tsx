@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 import AppLayout from '@/components/layout/AppLayout';
+import QueryProvider from '@/components/providers/QueryProvider';
 
 export const metadata: Metadata = {
   title: 'SupplyChainAI',
@@ -22,10 +23,12 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
         <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
       </head>
-      <body className="font-body antialiased bg-background text-foreground" suppressHydrationWarning={true}> {/* Ensured bg-background and text-foreground from theme */}
-        <AppLayout>
-          {children}
-        </AppLayout>
+      <body className="font-body antialiased bg-background text-foreground" suppressHydrationWarning={true}>
+        <QueryProvider>
+          <AppLayout>
+            {children}
+          </AppLayout>
+        </QueryProvider>
         <Toaster />
       </body>
     </html>
