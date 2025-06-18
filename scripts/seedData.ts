@@ -3,36 +3,35 @@
 // To run this, you'd need Node.js, Firebase Admin SDK, and proper credentials.
 // Example: npx ts-node scripts/seedData.ts
 
-// import * as admin from 'firebase-admin';
-// import { Timestamp } from 'firebase-admin/firestore';
-// import type {
-//   CompanyDocument, UserDocument, ProductDocument, InventoryStockDocument,
-//   SupplierDocument, OrderDocument, SalesHistoryDocument, ForecastDocument,
-//   DocumentMetadata, ChatSessionDocument
-// } from '../src/lib/types/firestore';
+import * as admin from 'firebase-admin';
+import { Timestamp } from 'firebase-admin/firestore'; // Import Timestamp
+import type {
+  CompanyDocument, UserDocument, ProductDocument, InventoryStockDocument,
+  SupplierDocument, OrderDocument, SalesHistoryDocument, ForecastDocument,
+  DocumentMetadata, ChatSessionDocument, ChatMessage
+} from '../src/lib/types/firestore';
 
-// // --- Firebase Admin SDK Initialization (Uncomment and configure) ---
-// // try {
-// //   const serviceAccount = require('../path/to/your-service-account-key.json'); // Replace with your actual path
-// //   if (!admin.apps.length) {
-// //     admin.initializeApp({
-// //       credential: admin.credential.cert(serviceAccount),
-// //       databaseURL: "https://aria-jknbu-default-rtdb.firebaseio.com" // Replace if using a different DB URL for Admin
-// //     });
-// //     console.log("Firebase Admin SDK initialized.");
-// //   }
-// // } catch (error) {
-// //   console.error("Error initializing Firebase Admin SDK. Make sure your service account key is correct and accessible.");
-// //   console.error("Error details:", error);
-// //   process.exit(1); // Exit if SDK cannot be initialized
-// // }
-// // const db = admin.firestore();
-// // ------------------------------------------------------------------
+// --- Firebase Admin SDK Initialization ---
+try {
+  // IMPORTANT: Replace "path/to/serviceAccountKey.json" with the actual path to your Firebase service account key.
+  const serviceAccount = require("../path/to/your-service-account-key.json"); 
+  if (!admin.apps.length) {
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      databaseURL: "https://aria-jknbu-default-rtdb.firebaseio.com" // User provided DB URL
+    });
+    console.log("Firebase Admin SDK initialized.");
+  }
+} catch (error) {
+  console.error("Error initializing Firebase Admin SDK. Make sure your service account key is correct and accessible at the specified path.");
+  console.error("Error details:", error);
+  process.exit(1); // Exit if SDK cannot be initialized
+}
+const db = admin.firestore();
+// ------------------------------------------------------------------
 
 
-console.log("--- Conceptual Data Seeding Script for SupplyChainAI ---");
-console.log("This script outlines how you might seed Firestore data.");
-console.log("It does not connect to or modify any database without uncommenting and configuring Firebase Admin SDK.\n");
+console.log("--- Data Seeding Script for SupplyChainAI ---");
 
 const MOCK_COMPANY_ID = 'comp_supplychainai_seed_001';
 const MOCK_USER_ID_OWNER = 'user_owner_seed_001';
@@ -44,7 +43,7 @@ const mockCompany: Omit<CompanyDocument, 'id' | 'createdAt'> & { id: string, cre
   id: MOCK_COMPANY_ID,
   name: 'Seed Supply Co.',
   plan: 'pro',
-  createdAt: new Date(), // In real script: Timestamp.now(),
+  createdAt: new Date(),
   settings: { timezone: 'America/New_York', currency: 'USD' },
   ownerId: MOCK_USER_ID_OWNER,
 };
@@ -152,7 +151,7 @@ const mockSuppliers: (Omit<SupplierDocument, 'id' | 'createdAt' | 'lastUpdated'>
 }));
 
 
-const mockOrdersRaw: (Omit<OrderDocument, 'id' | 'companyId' | 'createdAt' | 'lastUpdated' | 'orderDate'> & {orderDate: Date, actualDeliveryDate?: Date})[] = [
+const mockOrdersRaw: (Omit<OrderDocument, 'id' | 'companyId' | 'createdAt' | 'lastUpdated' | 'orderDate'> & {orderDate: Date, expectedDate?: Date, actualDeliveryDate?: Date})[] = [
   { // Purchase Order 1
     orderNumber: 'PO-2024-SEED-001',
     type: 'purchase',
@@ -164,7 +163,7 @@ const mockOrdersRaw: (Omit<OrderDocument, 'id' | 'companyId' | 'createdAt' | 'la
     totalAmount: 9525.00,
     status: 'delivered',
     orderDate: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000),
-    expectedDate: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000) as any,
+    expectedDate: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000),
     actualDeliveryDate: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
     createdBy: MOCK_USER_ID_MANAGER,
   },
@@ -184,20 +183,20 @@ const mockOrdersRaw: (Omit<OrderDocument, 'id' | 'companyId' | 'createdAt' | 'la
   },
 ];
 
-const mockOrders: (Omit<OrderDocument, 'id' | 'createdAt' | 'lastUpdated'> & {id: string, createdAt: Date, lastUpdated: Date})[] = mockOrdersRaw.map((o, index) => ({
+const mockOrders: (Omit<OrderDocument, 'id' | 'createdAt' | 'lastUpdated' | 'orderDate' | 'expectedDate' | 'actualDeliveryDate'> & {id: string, orderDate: Date, expectedDate?: Date, actualDeliveryDate?: Date, createdAt: Date, lastUpdated: Date})[] = mockOrdersRaw.map((o, index) => ({
   id: `ord_seed_${String(index + 1).padStart(3, '0')}`,
   companyId: MOCK_COMPANY_ID,
   ...o,
-  orderDate: o.orderDate as any, // Convert to Firestore Timestamp in real script
-  expectedDate: o.expectedDate as any,
-  actualDeliveryDate: o.actualDeliveryDate as any,
+  orderDate: o.orderDate, 
+  expectedDate: o.expectedDate,
+  actualDeliveryDate: o.actualDeliveryDate,
   createdAt: o.orderDate,
   lastUpdated: o.actualDeliveryDate || o.orderDate,
 }));
 
 const mockSalesHistoryRaw: (Omit<SalesHistoryDocument, 'id' | 'companyId' | 'date'> & {orderId?: string, date: Date})[] = [
-  { productId: MOCK_PRODUCT_IDS["MOUSE002"], sku: "MOUSE002", orderId: mockOrders[1].id, date: mockOrders[1].orderDate as Date, quantity: 2, unitPrice: 39.99, revenue: 79.98, channel: 'Online Store', customerId: 'cust_retail_001' },
-  { productId: MOCK_PRODUCT_IDS["KEYB003"], sku: "KEYB003", orderId: mockOrders[1].id, date: mockOrders[1].orderDate as Date, quantity: 1, unitPrice: 89.99, revenue: 89.99, channel: 'Online Store', customerId: 'cust_retail_001' },
+  { productId: MOCK_PRODUCT_IDS["MOUSE002"], sku: "MOUSE002", orderId: mockOrders[1].id, date: mockOrders[1].orderDate, quantity: 2, unitPrice: 39.99, revenue: 79.98, channel: 'Online Store', customerId: 'cust_retail_001' },
+  { productId: MOCK_PRODUCT_IDS["KEYB003"], sku: "KEYB003", orderId: mockOrders[1].id, date: mockOrders[1].orderDate, quantity: 1, unitPrice: 89.99, revenue: 89.99, channel: 'Online Store', customerId: 'cust_retail_001' },
   { productId: MOCK_PRODUCT_IDS["LAPTOP001"], sku: "LAPTOP001", date: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000), quantity: 1, unitPrice: 1299.99, revenue: 1299.99, channel: 'Direct Sale' },
   { productId: MOCK_PRODUCT_IDS["TSHIRT001"], sku: "TSHIRT001", date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), quantity: 10, unitPrice: 24.99, revenue: 249.90, channel: 'Retail POS' },
   { productId: MOCK_PRODUCT_IDS["TSHIRT001"], sku: "TSHIRT001", date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), quantity: 5, unitPrice: 24.99, revenue: 124.95, channel: 'Online Store' },
@@ -207,7 +206,7 @@ const mockSalesHistory: (Omit<SalesHistoryDocument, 'id' | 'date'> & {id: string
   id: `sh_seed_${String(index + 1).padStart(3, '0')}`,
   companyId: MOCK_COMPANY_ID,
   ...s,
-  date: s.date as any, // Convert to Firestore Timestamp in real script
+  date: s.date,
 }));
 
 const mockForecastsRaw: (Omit<ForecastDocument, 'id' | 'companyId' | 'generatedAt'>)[] = [
@@ -241,7 +240,7 @@ const mockForecasts: (Omit<ForecastDocument, 'id' | 'generatedAt'> & {id: string
     id: `fc_seed_${String(index + 1).padStart(3, '0')}`,
     companyId: MOCK_COMPANY_ID,
     ...fc,
-    generatedAt: new Date() as any, // Convert to Firestore Timestamp in real script
+    generatedAt: new Date(),
 }));
 
 const mockDocumentsRaw: (Omit<DocumentMetadata, 'id' | 'companyId' | 'uploadedAt' | 'processedAt'>)[] = [
@@ -274,16 +273,16 @@ const mockDocuments: (Omit<DocumentMetadata, 'id' | 'uploadedAt' | 'processedAt'
     id: `doc_seed_${String(index + 1).padStart(3, '0')}`,
     companyId: MOCK_COMPANY_ID,
     ...doc,
-    uploadedAt: new Date(Date.now() - (index + 2) * 24 * 60 * 60 * 1000) as any, // Convert to Firestore Timestamp
-    processedAt: new Date(Date.now() - (index + 1) * 24 * 60 * 60 * 1000) as any, // Convert to Firestore Timestamp
+    uploadedAt: new Date(Date.now() - (index + 2) * 24 * 60 * 60 * 1000),
+    processedAt: new Date(Date.now() - (index + 1) * 24 * 60 * 60 * 1000),
 }));
 
-const mockChatSessionsRaw: (Omit<ChatSessionDocument, 'id' | 'companyId' | 'createdAt' | 'lastMessageAt'>)[] = [
+const mockChatSessionsRaw: (Omit<ChatSessionDocument, 'id' | 'companyId' | 'createdAt' | 'lastMessageAt' | 'messages'> & { messages: Omit<ChatMessage, 'timestamp'>[] })[] = [
   {
     userId: MOCK_USER_ID_OWNER,
     messages: [
-      { role: 'user', content: 'Which items are running low?', timestamp: new Date(Date.now() - 60 * 60 * 1000) as any },
-      { role: 'assistant', content: 'Currently, LAPTOP001 (5 units), KEYB003 (2 units), and MONITOR01 (0 units) are below their reorder points.', timestamp: new Date(Date.now() - 59 * 60 * 1000) as any },
+      { role: 'user', content: 'Which items are running low?' },
+      { role: 'assistant', content: 'Currently, LAPTOP001 (5 units), KEYB003 (2 units), and MONITOR01 (0 units) are below their reorder points.' },
     ],
     context: { loadedInventoryDataSummary: "Live Database Snapshot", currentFocusSKU: "LAPTOP001" },
     title: 'Low Stock Inquiry',
@@ -294,119 +293,109 @@ const mockChatSessions: (Omit<ChatSessionDocument, 'id' | 'createdAt' | 'lastMes
     id: `chat_seed_${String(index + 1).padStart(3, '0')}`,
     companyId: MOCK_COMPANY_ID,
     ...chat,
-    createdAt: new Date(Date.now() - (index + 2) * 60 * 60 * 1000) as any, // Convert to Firestore Timestamp
-    lastMessageAt: new Date(Date.now() - (index + 1) * 59 * 60 * 1000) as any, // Convert to Firestore Timestamp
+    messages: chat.messages.map(msg => ({...msg, timestamp: Timestamp.fromDate(new Date(Date.now() - (Math.random() * 3600 * 1000))) } as ChatMessage)),
+    createdAt: new Date(Date.now() - (index + 2) * 60 * 60 * 1000),
+    lastMessageAt: new Date(Date.now() - (index + 1) * 59 * 60 * 1000),
 }));
 
 
 async function seedDatabase() {
-  // console.log("Connecting to Firestore...");
-  // This is where you'd use the admin SDK after initializing it:
-  // const db = admin.firestore();
-  // const batch = db.batch(); // Use batches for efficiency
+  console.log("Connecting to Firestore...");
+  const batch = db.batch(); // Use batches for efficiency
 
-  // console.log("Simulating data writes to Firestore collections:");
+  console.log("Seeding data to Firestore collections:");
 
-  // // --- Seeding Logic (Conceptual - using JavaScript Dates, convert to Timestamp for Firestore) ---
-  // console.log(`Seeding company: ${mockCompany.name}`);
-  // const companyDocRef = db.collection('companies').doc(mockCompany.id);
-  // batch.set(companyDocRef, { ...mockCompany, createdAt: Timestamp.fromDate(mockCompany.createdAt) });
+  console.log(`Seeding company: ${mockCompany.name}`);
+  const companyDocRef = db.collection('companies').doc(mockCompany.id);
+  batch.set(companyDocRef, { ...mockCompany, createdAt: Timestamp.fromDate(mockCompany.createdAt) });
 
-  // console.log(`Seeding ${mockUsers.length} users...`);
-  // mockUsers.forEach(user => {
-  //   const userDocRef = db.collection('users').doc(user.uid);
-  //   batch.set(userDocRef, { ...user, createdAt: Timestamp.fromDate(user.createdAt) });
-  // });
+  console.log(`Seeding ${mockUsers.length} users...`);
+  mockUsers.forEach(user => {
+    const userDocRef = db.collection('users').doc(user.uid);
+    batch.set(userDocRef, { ...user, createdAt: Timestamp.fromDate(user.createdAt) });
+  });
 
-  // console.log(`Seeding ${mockProducts.length} products...`);
-  // mockProducts.forEach(product => {
-  //   const productDocRef = db.collection('products').doc(product.id);
-  //   batch.set(productDocRef, { ...product, createdAt: Timestamp.fromDate(product.createdAt), lastUpdated: Timestamp.fromDate(product.lastUpdated) });
-  // });
+  console.log(`Seeding ${mockProducts.length} products...`);
+  mockProducts.forEach(product => {
+    const productDocRef = db.collection('products').doc(product.id);
+    batch.set(productDocRef, { ...product, createdAt: Timestamp.fromDate(product.createdAt), lastUpdated: Timestamp.fromDate(product.lastUpdated) });
+  });
   
-  // console.log(`Seeding ${mockInventoryStock.length} inventory stock records...`);
-  // mockInventoryStock.forEach(item => {
-  //   const itemDocRef = db.collection('inventory').doc(item.id);
-  //   batch.set(itemDocRef, { ...item, lastUpdated: Timestamp.fromDate(item.lastUpdated) });
-  // });
+  console.log(`Seeding ${mockInventoryStock.length} inventory stock records...`);
+  mockInventoryStock.forEach(item => {
+    const itemDocRef = db.collection('inventory').doc(item.id);
+    batch.set(itemDocRef, { ...item, lastUpdated: Timestamp.fromDate(item.lastUpdated) });
+  });
   
-  // console.log(`Seeding ${mockSuppliers.length} suppliers...`);
-  // mockSuppliers.forEach(supplier => {
-  //   const supplierDocRef = db.collection('suppliers').doc(supplier.id);
-  //   batch.set(supplierDocRef, { ...supplier, createdAt: Timestamp.fromDate(supplier.createdAt), lastUpdated: Timestamp.fromDate(supplier.lastUpdated) });
-  // });
+  console.log(`Seeding ${mockSuppliers.length} suppliers...`);
+  mockSuppliers.forEach(supplier => {
+    const supplierDocRef = db.collection('suppliers').doc(supplier.id);
+    batch.set(supplierDocRef, { ...supplier, createdAt: Timestamp.fromDate(supplier.createdAt), lastUpdated: Timestamp.fromDate(supplier.lastUpdated) });
+  });
 
-  // console.log(`Seeding ${mockOrders.length} orders...`);
-  // mockOrders.forEach(order => {
-  //   const orderDocRef = db.collection('orders').doc(order.id);
-  //   batch.set(orderDocRef, {
-  //        ...order, 
-  //        orderDate: Timestamp.fromDate(order.orderDate as Date), 
-  //        expectedDate: order.expectedDate ? Timestamp.fromDate(order.expectedDate as Date) : undefined,
-  //        actualDeliveryDate: order.actualDeliveryDate ? Timestamp.fromDate(order.actualDeliveryDate as Date) : undefined,
-  //        createdAt: Timestamp.fromDate(order.createdAt as Date), 
-  //        lastUpdated: Timestamp.fromDate(order.lastUpdated as Date)
-  //   });
-  // });
+  console.log(`Seeding ${mockOrders.length} orders...`);
+  mockOrders.forEach(order => {
+    const orderDocRef = db.collection('orders').doc(order.id);
+    batch.set(orderDocRef, {
+         ...order, 
+         orderDate: Timestamp.fromDate(order.orderDate as Date), 
+         expectedDate: order.expectedDate ? Timestamp.fromDate(order.expectedDate as Date) : undefined,
+         actualDeliveryDate: order.actualDeliveryDate ? Timestamp.fromDate(order.actualDeliveryDate as Date) : undefined,
+         createdAt: Timestamp.fromDate(order.createdAt as Date), 
+         lastUpdated: Timestamp.fromDate(order.lastUpdated as Date)
+    });
+  });
 
-  // console.log(`Seeding ${mockSalesHistory.length} sales history records...`);
-  // mockSalesHistory.forEach(sh => {
-  //   const shDocRef = db.collection('sales_history').doc(sh.id);
-  //   batch.set(shDocRef, { ...sh, date: Timestamp.fromDate(sh.date) });
-  // });
+  console.log(`Seeding ${mockSalesHistory.length} sales history records...`);
+  mockSalesHistory.forEach(sh => {
+    const shDocRef = db.collection('sales_history').doc(sh.id);
+    batch.set(shDocRef, { ...sh, date: Timestamp.fromDate(sh.date) });
+  });
 
-  // console.log(`Seeding ${mockForecasts.length} forecasts...`);
-  // mockForecasts.forEach(fc => {
-  //   const fcDocRef = db.collection('forecasts').doc(fc.id);
-  //   batch.set(fcDocRef, { ...fc, generatedAt: Timestamp.fromDate(fc.generatedAt) });
-  // });
+  console.log(`Seeding ${mockForecasts.length} forecasts...`);
+  mockForecasts.forEach(fc => {
+    const fcDocRef = db.collection('forecasts').doc(fc.id);
+    batch.set(fcDocRef, { ...fc, generatedAt: Timestamp.fromDate(fc.generatedAt) });
+  });
 
-  // console.log(`Seeding ${mockDocuments.length} document metadata entries...`);
-  // mockDocuments.forEach(doc => {
-  //   const docRef = db.collection('documents').doc(doc.id);
-  //   batch.set(docRef, { 
-  //       ...doc, 
-  //       uploadedAt: Timestamp.fromDate(doc.uploadedAt), 
-  //       processedAt: doc.processedAt ? Timestamp.fromDate(doc.processedAt) : undefined 
-  //   });
-  // });
+  console.log(`Seeding ${mockDocuments.length} document metadata entries...`);
+  mockDocuments.forEach(doc => {
+    const docRef = db.collection('documents').doc(doc.id);
+    batch.set(docRef, { 
+        ...doc, 
+        uploadedAt: Timestamp.fromDate(doc.uploadedAt), 
+        processedAt: doc.processedAt ? Timestamp.fromDate(doc.processedAt) : undefined 
+    });
+  });
 
-  // console.log(`Seeding ${mockChatSessions.length} chat sessions...`);
-  // mockChatSessions.forEach(chat => {
-  //   const chatRef = db.collection('chat_sessions').doc(chat.id);
-  //   const messagesWithTimestamps = chat.messages.map(msg => ({...msg, timestamp: Timestamp.fromDate(msg.timestamp as Date)}));
-  //   batch.set(chatRef, { 
-  //       ...chat, 
-  //       messages: messagesWithTimestamps,
-  //       createdAt: Timestamp.fromDate(chat.createdAt), 
-  //       lastMessageAt: Timestamp.fromDate(chat.lastMessageAt)
-  //   });
-  // });
+  console.log(`Seeding ${mockChatSessions.length} chat sessions...`);
+  mockChatSessions.forEach(chat => {
+    const chatRef = db.collection('chat_sessions').doc(chat.id);
+    batch.set(chatRef, { 
+        ...chat, 
+        createdAt: Timestamp.fromDate(chat.createdAt), 
+        lastMessageAt: Timestamp.fromDate(chat.lastMessageAt)
+    });
+  });
 
-  // // Commit the batch
-  // try {
-  //   // await batch.commit(); // Uncomment this line to actually write to Firestore
-  //   console.log("Batch commit simulated. Database seeded conceptually.");
-  // } catch (error) {
-  //   console.error("Error committing batch: ", error);
-  // }
+  // Commit the batch
+  try {
+    await batch.commit();
+    console.log("Batch commit successful. Database seeded.");
+  } catch (error) {
+    console.error("Error committing batch: ", error);
+  }
   
-  console.log("\n--- Mock Data Summary (Conceptual) ---");
+  console.log("\n--- Mock Data Summary (Written to DB) ---");
   console.log("Company:", JSON.stringify(mockCompany, null, 2));
   console.log("Users (first 1):", JSON.stringify(mockUsers.slice(0,1), null, 2) + "\n  ...");
   console.log("Products (first 2):", JSON.stringify(mockProducts.slice(0,2), null, 2) + "\n  ...");
   console.log("Inventory Stock (first 2):", JSON.stringify(mockInventoryStock.slice(0,2), null, 2) + "\n  ...");
-  console.log("Suppliers (first 1):", JSON.stringify(mockSuppliers.slice(0,1), null, 2) + "\n  ...");
-  console.log("Orders (first 1):", JSON.stringify(mockOrders.slice(0,1), null, 2) + "\n  ...");
-  console.log("Sales History (first 2):", JSON.stringify(mockSalesHistory.slice(0,2), null, 2) + "\n  ...");
-  console.log("Forecasts (first 1):", JSON.stringify(mockForecasts.slice(0,1), null, 2) + "\n  ...");
-  console.log("Documents (first 1):", JSON.stringify(mockDocuments.slice(0,1), null, 2) + "\n  ...");
-  console.log("Chat Sessions (first 1):", JSON.stringify(mockChatSessions.slice(0,1), null, 2) + "\n  ...");
 
-  console.log("\nSeeding simulation complete. In a real script with Firebase Admin configured, this data would be written to Firestore.");
+  console.log("\nSeeding complete. Data should be in your Firestore database.");
 }
 
-// To actually run, you would call seedDatabase() here after uncommenting Admin SDK init and batch.commit().
-// Make sure to replace '../path/to/your-service-account-key.json' with the actual path to your key file.
-// seedDatabase().catch(console.error);
+seedDatabase().catch(console.error);
+    
+
     
