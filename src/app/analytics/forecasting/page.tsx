@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, BarChartBig, TrendingUp, Info, CalendarClock, BarChartHorizontalBig, Lightbulb } from 'lucide-react';
+import { Loader2, BarChartBig, TrendingUp, Info, CalendarClock, BarChartHorizontalBig, Lightbulb, Zap } from 'lucide-react';
 import { useGenerateDemandForecast } from '@/hooks/useAnalytics';
 import type { ForecastDemandOutput } from '@/ai/flows/forecasting';
 import ForecastChart from '@/components/analytics/forecasting/ForecastChart';
@@ -57,6 +57,7 @@ export default function ForecastingPage() {
       JSON.parse(historicalSalesData);
     } catch (error) {
       generateForecastMutation.reset();
+      // Consider using toast for this error
       alert("Historical sales data is not valid JSON."); 
       return;
     }
@@ -90,7 +91,7 @@ export default function ForecastingPage() {
       <Card className="shadow-xl border-border">
         <CardHeader>
           <CardTitle className="font-headline text-2xl flex items-center text-foreground">
-            <TrendingUp className="h-7 w-7 mr-3 text-primary" />
+            <Zap className="h-7 w-7 mr-3 text-primary" />
             Demand Forecasting Engine
           </CardTitle>
           <CardDescription className="text-base">
@@ -163,17 +164,21 @@ export default function ForecastingPage() {
                 <Skeleton className="h-8 w-3/4 rounded-md" />
                 <Skeleton className="h-4 w-1/2 mt-2 rounded-md" />
             </CardHeader>
-            <CardContent className="space-y-8 pt-2">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <CardContent className="space-y-8 pt-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     <Skeleton className="h-28 w-full rounded-lg" />
                     <Skeleton className="h-28 w-full rounded-lg" />
                     <Skeleton className="h-28 w-full rounded-lg" />
-                    <Skeleton className="h-28 w-full rounded-lg md:col-span-2 lg:col-span-1" />
+                    <Skeleton className="h-28 w-full rounded-lg" />
                     <Skeleton className="h-28 w-full rounded-lg" />
                     <Skeleton className="h-28 w-full rounded-lg" />
                 </div>
+                <Separator />
                 <Skeleton className="h-80 w-full rounded-lg" />
+                 <Separator />
                  <Skeleton className="h-20 w-full rounded-lg" />
+                 <Separator />
+                 <Skeleton className="h-40 w-full rounded-lg" />
             </CardContent>
         </Card>
       )}
@@ -208,7 +213,7 @@ export default function ForecastingPage() {
                 <ForecastMetricCard title="90-Day Forecast" value={getTotalPredictedUnits('90day')} description={<ConfidenceIndicator level={forecastResult.predictions['90day'].confidence} />} />
                 <ForecastMetricCard title="Avg. Daily Demand (30d)" value={getAverageDemand('30day')} description="Approximate daily average" />
                 <ForecastMetricCard title="Total Predicted (90d)" value={getTotalPredictedUnits('90day')} description="Total units for next 90 days" />
-                <ForecastMetricCard title="Confidence (90d)" value={<ConfidenceIndicator level={forecastResult.predictions['90day'].confidence} />} description="Overall confidence for 90d" />
+                <ForecastMetricCard title="Peak Demand Period" value={"N/A"} description="Analysis pending" />
               </div>
             </section>
             
@@ -251,7 +256,7 @@ export default function ForecastingPage() {
         </Card>
       )}
 
-      <Card className="shadow-lg border-border">
+      <Card className="shadow-lg border-border mt-4">
         <CardHeader>
           <CardTitle className="font-headline text-2xl text-foreground">Scenario Analysis (What-If Simulator)</CardTitle>
           <CardDescription className="text-base">Explore how different factors might impact your forecast. (Feature in development)</CardDescription>
@@ -264,3 +269,4 @@ export default function ForecastingPage() {
   );
 }
 
+    
