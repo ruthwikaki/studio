@@ -38,15 +38,14 @@ export default function ForecastChart({ historicalData, predictions }: ForecastC
   const chartConfig = {
     historical: {
       label: "Historical Sales",
-      color: "hsl(var(--primary))",
+      color: "hsl(var(--primary))", // Blue
     },
     predicted: {
       label: "Predicted Demand",
-      color: "hsl(var(--accent))",
+      color: "hsl(var(--success))", // Green (using success color from theme)
     },
-    // Add confidence interval colors if you had the data
-    // confidenceUpper: { label: "Upper Confidence", color: "hsla(var(--accent), 0.2)" },
-    // confidenceLower: { label: "Lower Confidence", color: "hsla(var(--accent), 0.2)" },
+    confidenceUpper: { label: "Upper Confidence", color: "hsla(var(--primary), 0.1)" }, // Light blue for confidence
+    confidenceLower: { label: "Lower Confidence", color: "hsla(var(--primary), 0.1)" }, // Light blue for confidence
   };
   
   const lastHistoricalEntry = historicalData.length > 0 ? historicalData[historicalData.length - 1] : { date: new Date().toISOString().split('T')[0], quantitySold: 0 };
@@ -64,17 +63,17 @@ export default function ForecastChart({ historicalData, predictions }: ForecastC
     { dateLabel: 'Next 90 Days', date: getFutureDate(lastHistoricalDateObj, 90), predicted: predictions['90day'].demand, confidence: predictions['90day'].confidence },
   ].map(p => ({ ...p, timestamp: new Date(p.date).getTime() }));
 
-  // Create a bridge point for a continuous line
-   const bridgePoint = {
-    date: predictionPoints[0].date, // Use the date of the first prediction
-    historical: formattedHistoricalData.length > 0 ? formattedHistoricalData[formattedHistoricalData.length - 1].historical : undefined, // Value of the last historical point
-    timestamp: new Date(predictionPoints[0].date).getTime() -1, // Ensure it sorts just before the first prediction
-  };
+  // Create a bridge point for a continuous line if there's historical data
+   const bridgePoint = formattedHistoricalData.length > 0 && predictionPoints.length > 0 ? {
+    date: predictionPoints[0].date, 
+    historical: formattedHistoricalData[formattedHistoricalData.length - 1].historical,
+    timestamp: new Date(predictionPoints[0].date).getTime() -1, 
+  } : null;
 
 
   const combinedData = [
     ...formattedHistoricalData,
-    ...(formattedHistoricalData.length > 0 && predictionPoints.length > 0 ? [bridgePoint] : []), // Add bridge if both exist
+    ...(bridgePoint ? [bridgePoint] : []), 
     ...predictionPoints.map(p => ({ date: p.date, predicted: p.predicted, confidence: p.confidence, timestamp: p.timestamp }))
   ].sort((a,b) => a.timestamp - b.timestamp);
 
@@ -104,7 +103,7 @@ export default function ForecastChart({ historicalData, predictions }: ForecastC
                     contentStyle={{ backgroundColor: "hsl(var(--background))", border: "1px solid hsl(var(--border))", borderRadius: "0.5rem", boxShadow: "var(--shadow-md)" }}
                     labelStyle={{ color: "hsl(var(--foreground))", fontWeight: "bold", marginBottom: "0.5rem" }}
                     itemStyle={{ color: "hsl(var(--foreground))" }}
-                    formatter={(value, name, props) => {
+                    formatter={(value: number, name: string, props: any) => {
                         const formattedValue = typeof value === 'number' ? value.toLocaleString() : value;
                         if (name === 'predicted' && props.payload.confidence) {
                             return [`${formattedValue} (Confidence: ${props.payload.confidence})`, chartConfig.predicted.label];
@@ -126,21 +125,44 @@ export default function ForecastChart({ historicalData, predictions }: ForecastC
                     type="monotone" 
                     dataKey="predicted" 
                     stroke={chartConfig.predicted.color} 
-                    strokeDasharray="5 5" 
+                    strokeDasharray="5 5" // Dashed line for predictions
                     strokeWidth={2} 
                     dot={{ r: 3, fill: chartConfig.predicted.color }} 
                     activeDot={{ r: 5 }}
                     name={chartConfig.predicted.label as string}
                 />
-                 {/* Illustrative confidence interval - requires actual min/max data from API for real shading
-                 <Area type="monotone" dataKey="confidenceUpper" stroke="transparent" fill="hsla(var(--primary-hsl), 0.1)" name="Upper Bound" />
-                 <Area type="monotone" dataKey="confidenceLower" stroke="transparent" fill="hsla(var(--primary-hsl), 0.1)" name="Lower Bound" />
+                 {/* 
+                 Illustrative confidence interval - requires actual min/max data from API for real shading.
+                 If you had `predictedMin` and `predictedMax` in your data:
+                 <Area 
+                    type="monotone" 
+                    dataKey="predictedMax" 
+                    stackId="confidence" 
+                    stroke="transparent" 
+                    fill={chartConfig.confidenceUpper.color}
+                    name={chartConfig.confidenceUpper.label as string} 
+                 />
+                 <Area 
+                    type="monotone" 
+                    dataKey="predictedMin" 
+                    stackId="confidence"  // Use same stackId if you want it to "fill up" from min to max
+                    stroke="transparent" 
+                    fill={chartConfig.confidenceLower.color} // This might be better as the same color with opacity
+                    name={chartConfig.confidenceLower.label as string}
+                  />
+                  Or for a single shaded area based on a +- range around 'predicted':
+                  const dataWithConfidence = combinedData.map(d => ({
+                    ...d,
+                    confidenceRange: d.predicted ? [d.predicted - (d.predicted * 0.1), d.predicted + (d.predicted * 0.1)] : undefined
+                  }));
+                  <Line type="monotone" dataKey="confidenceRange" stroke="transparent" activeDot={false} name="Confidence Interval" />
                  */}
             </LineChart>
             </ResponsiveContainer>
         </ChartContainer>
-         <p className="text-xs text-muted-foreground text-center pt-2">Note: Chart shows historical sales and AI-predicted demand points. Confidence intervals are illustrative.</p>
+         <p className="text-xs text-muted-foreground text-center pt-2">Note: Chart shows historical sales and AI-predicted demand points. Shaded confidence interval is illustrative.</p>
       </CardContent>
     </Card>
   );
 }
+
