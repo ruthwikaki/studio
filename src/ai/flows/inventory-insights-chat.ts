@@ -42,9 +42,9 @@ const prompt = ai.definePrompt({
   Maintain the conversation history to provide context-aware responses.
 
   Inventory Data:
-  ```json
+  \`\`\`${'json'}
   {{{inventoryData}}}
-  ```
+  \`\`\`
 
   Conversation History:
   {{#each conversationHistory}}
@@ -88,3 +88,4 @@ const inventoryInsightsChatFlow = ai.defineFlow(
     return output!;
   }
 );
+
