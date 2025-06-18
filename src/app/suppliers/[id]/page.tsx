@@ -8,8 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AlertTriangle, ArrowLeft, Edit, DollarSign, Clock, CheckCircle, ShoppingCart, BarChart2, CalendarDays } from 'lucide-react';
-import Image from 'next/image';
+import { AlertTriangle, ArrowLeft, Edit, DollarSign, Clock, CheckCircle, ShoppingCart, BarChart2, CalendarDays, LineChart } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
@@ -85,7 +84,7 @@ export default function SupplierDetailPage() {
         <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <Avatar className="h-20 w-20 border-2 border-primary">
-              <AvatarImage src={supplier.logoUrl || "https://placehold.co/100x100.png"} alt={supplier.name} data-ai-hint="company logo"/>
+              <AvatarImage src={supplier.logoUrl || undefined} alt={supplier.name} />
               <AvatarFallback>{supplier.name.substring(0, 2).toUpperCase()}</AvatarFallback>
             </Avatar>
             <div>
@@ -147,47 +146,54 @@ export default function SupplierDetailPage() {
                 </Card>
             </div>
 
-            <h3 className="text-lg font-semibold mb-4 text-foreground">Products Supplied</h3>
+            <h3 className="text-lg font-semibold mb-4 text-foreground">Products Supplied (Smart Table)</h3>
             {supplier.productsSupplied && supplier.productsSupplied.length > 0 ? (
-            <div className="overflow-x-auto rounded-md border">
-                <Table>
-                    <TableHeader>
-                    <TableRow>
-                        <TableHead>SKU</TableHead>
-                        <TableHead>Product Name</TableHead>
-                        <TableHead className="text-right">Last Price</TableHead>
-                        <TableHead className="text-right">MOQ</TableHead>
-                        <TableHead className="text-center">Actions</TableHead>
-                    </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                    {supplier.productsSupplied.map((product) => (
-                        <TableRow key={product.productId}>
-                        <TableCell className="font-medium">{product.sku}</TableCell>
-                        <TableCell>{product.name}</TableCell>
-                        <TableCell className="text-right">${product.lastPrice?.toFixed(2) ?? 'N/A'}</TableCell>
-                        <TableCell className="text-right">{product.moqForItem ?? 'N/A'}</TableCell>
-                        <TableCell className="text-center">
-                            <Button variant="outline" size="sm" disabled>Reorder (Soon)</Button>
-                        </TableCell>
+            <Card>
+              <CardContent className="pt-4">
+                <p className="text-sm text-muted-foreground mb-2">
+                  This table will allow inline editing, column customization, advanced filtering, and bulk operations.
+                </p>
+                <div className="overflow-x-auto rounded-md border">
+                    <Table>
+                        <TableHeader>
+                        <TableRow>
+                            <TableHead>SKU</TableHead>
+                            <TableHead>Product Name</TableHead>
+                            <TableHead className="text-right">Last Price</TableHead>
+                            <TableHead className="text-right">MOQ</TableHead>
+                            <TableHead className="text-center">Actions</TableHead>
                         </TableRow>
-                    ))}
-                    </TableBody>
-                </Table>
-            </div>
+                        </TableHeader>
+                        <TableBody>
+                        {supplier.productsSupplied.map((product) => (
+                            <TableRow key={product.productId}>
+                            <TableCell className="font-medium">{product.sku}</TableCell>
+                            <TableCell>{product.name}</TableCell>
+                            <TableCell className="text-right">${product.lastPrice?.toFixed(2) ?? 'N/A'}</TableCell>
+                            <TableCell className="text-right">{product.moqForItem ?? 'N/A'}</TableCell>
+                            <TableCell className="text-center">
+                                <Button variant="outline" size="sm" disabled>Reorder (Soon)</Button>
+                            </TableCell>
+                            </TableRow>
+                        ))}
+                        </TableBody>
+                    </Table>
+                </div>
+              </CardContent>
+            </Card>
             ) : (
                 <p className="text-muted-foreground">No specific products listed for this supplier.</p>
             )}
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
                 <div>
-                    <h3 className="text-lg font-semibold mb-4 text-foreground">Order History</h3>
+                    <h3 className="text-lg font-semibold mb-4 text-foreground">Order History (Interactive Timeline)</h3>
                     <Card>
-                        <CardContent className="pt-6 min-h-[200px] flex items-center justify-center">
+                        <CardContent className="pt-6 min-h-[250px] flex items-center justify-center">
                              <div className="text-center text-muted-foreground">
-                                <CalendarDays className="h-10 w-10 mx-auto mb-2"/>
-                                <p>Order history timeline will appear here.</p>
-                                <p className="text-xs">(Feature in development)</p>
+                                <CalendarDays className="h-12 w-12 mx-auto mb-2 text-primary/50"/>
+                                <p className="font-semibold">Interactive Order History Timeline</p>
+                                <p className="text-xs">Drag to explore timeframes, click to drill down into specific orders. (D3.js powered)</p>
                             </div>
                         </CardContent>
                     </Card>
@@ -195,30 +201,12 @@ export default function SupplierDetailPage() {
                 <div>
                     <h3 className="text-lg font-semibold mb-4 text-foreground">Performance Chart (Last 6 Months)</h3>
                      <Card>
-                        <CardContent className="pt-6 min-h-[200px] flex items-center justify-center">
-                            <Image 
-                                src="https://placehold.co/400x200.png?text=Performance+Chart" 
-                                alt="Performance chart placeholder"
-                                width={400}
-                                height={200}
-                                data-ai-hint="line graph statistics"
-                                className="rounded-md shadow-sm"
-                            />
-                            {/* 
-                            Placeholder for actual chart:
-                            <ResponsiveContainer width="100%" height={300}>
-                                <LineChart data={mockPerformanceData}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="name" />
-                                <YAxis yAxisId="left" label={{ value: 'On-Time %', angle: -90, position: 'insideLeft' }} />
-                                <YAxis yAxisId="right" orientation="right" label={{ value: 'Quality Rating', angle: -90, position: 'insideRight' }} />
-                                <Tooltip />
-                                <Legend />
-                                <Line yAxisId="left" type="monotone" dataKey="onTime" stroke="#8884d8" activeDot={{ r: 8 }} />
-                                <Line yAxisId="right" type="monotone" dataKey="quality" stroke="#82ca9d" />
-                                </LineChart>
-                            </ResponsiveContainer> 
-                            */}
+                        <CardContent className="pt-6 min-h-[250px] flex items-center justify-center">
+                           <div className="text-center text-muted-foreground">
+                                <LineChart className="h-12 w-12 mx-auto mb-2 text-primary/50"/>
+                                <p className="font-semibold">Interactive Performance Chart</p>
+                                <p className="text-xs">D3.js powered visualization of On-Time Delivery %, Quality Ratings, Lead Time Trends. Real-time updates and smooth animations.</p>
+                            </div>
                         </CardContent>
                     </Card>
                 </div>

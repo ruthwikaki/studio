@@ -3,9 +3,9 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip, Area } from 'recharts';
+import { LineChart as RechartsLineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip, Area } from 'recharts';
 import type { ForecastDemandOutput } from '@/ai/flows/forecasting';
-import Image from "next/image";
+import { BarChart } from 'lucide-react'; // Using BarChart as a generic chart icon
 
 interface ForecastChartProps {
   historicalData: { date: string; quantitySold: number }[];
@@ -23,15 +23,11 @@ const getFutureDate = (baseDate: Date, daysToAdd: number): string => {
 export default function ForecastChart({ historicalData, baselinePredictions, scenarioPredictions }: ForecastChartProps) {
   if (!historicalData || historicalData.length === 0 || !baselinePredictions) {
     return (
-        <div className="h-[350px] w-full flex items-center justify-center bg-muted/30 rounded-lg border">
-             <Image 
-                src="https://placehold.co/450x250.png?text=Demand+Forecast+Chart" 
-                alt="Forecasting chart placeholder"
-                width={450}
-                height={250}
-                data-ai-hint="line graph data"
-                className="rounded-md shadow-sm opacity-50"
-            />
+        <div className="h-[350px] w-full flex flex-col items-center justify-center bg-muted/30 rounded-lg border p-4">
+             <BarChart className="h-16 w-16 text-primary/40 mb-4" />
+             <p className="text-md font-semibold text-muted-foreground">Demand Forecast Chart</p>
+             <p className="text-sm text-muted-foreground text-center">No data available to display the chart.</p>
+             <p className="text-xs text-muted-foreground text-center mt-1">Please generate a forecast to see the visualization.</p>
         </div>
     );
   }
@@ -87,32 +83,26 @@ export default function ForecastChart({ historicalData, baselinePredictions, sce
   const baselinePredictionPoints = createPredictionPoints(baselinePredictions, 'baseline');
   const scenarioPredictionPoints = createPredictionPoints(scenarioPredictions, 'scenario');
 
-  // Create a point to bridge historical to the first baseline prediction for continuous line
   const bridgePointHistoricalToBaseline = formattedHistoricalData.length > 0 && baselinePredictionPoints.length > 0 ? {
     date: baselinePredictionPoints[0].date, 
     historical: formattedHistoricalData[formattedHistoricalData.length - 1].historical,
-    timestamp: new Date(baselinePredictionPoints[0].date).getTime() -1, // Ensure it's just before
+    timestamp: new Date(baselinePredictionPoints[0].date).getTime() -1, 
   } : null;
 
-  // Combine all data points: historical, bridge, and all prediction points from baseline and scenario
   let combinedDataMap = new Map<string, any>();
 
-  // Add historical data
   formattedHistoricalData.forEach(item => {
     combinedDataMap.set(item.date, { ...combinedDataMap.get(item.date), ...item });
   });
   
-  // Add bridge point if it exists
   if (bridgePointHistoricalToBaseline) {
     combinedDataMap.set(bridgePointHistoricalToBaseline.date, { ...combinedDataMap.get(bridgePointHistoricalToBaseline.date), ...bridgePointHistoricalToBaseline });
   }
 
-  // Add baseline prediction points
   baselinePredictionPoints.forEach(p => {
     combinedDataMap.set(p.date, { ...combinedDataMap.get(p.date), ...p });
   });
 
-  // Add scenario prediction points
   scenarioPredictionPoints.forEach(p => {
     combinedDataMap.set(p.date, { ...combinedDataMap.get(p.date), ...p });
   });
@@ -125,7 +115,7 @@ export default function ForecastChart({ historicalData, baselinePredictions, sce
       <CardContent className="pt-6">
         <ChartContainer config={chartConfig} className="h-[350px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={combinedData} margin={{ top: 5, right: 30, left: 0, bottom: 20 }}>
+            <RechartsLineChart data={combinedData} margin={{ top: 5, right: 30, left: 0, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis 
                     dataKey="date" 
@@ -174,7 +164,6 @@ export default function ForecastChart({ historicalData, baselinePredictions, sce
                     name={chartConfig.historical.label as string}
                     connectNulls={true}
                 />
-                {/* Baseline Confidence Area */}
                 <Area
                     type="monotone"
                     dataKey="baselineUpper"
@@ -182,7 +171,7 @@ export default function ForecastChart({ historicalData, baselinePredictions, sce
                     stroke={chartConfig.confidenceArea.color}
                     fill={chartConfig.confidenceArea.color}
                     name={chartConfig.confidenceArea.label as string}
-                    hide={!baselinePredictionPoints.some(p => p.baselineUpper !== undefined)} // Hide if no data
+                    hide={!baselinePredictionPoints.some(p => p.baselineUpper !== undefined)} 
                     connectNulls={true}
                  />
                  <Area
@@ -191,7 +180,7 @@ export default function ForecastChart({ historicalData, baselinePredictions, sce
                     stackId="baselineCI" 
                     stroke={chartConfig.confidenceArea.color}
                     fill={chartConfig.confidenceArea.color}
-                    name="" // No separate legend item for lower bound
+                    name="" 
                     hide={!baselinePredictionPoints.some(p => p.baselineLower !== undefined)}
                     connectNulls={true}
                  />
@@ -208,7 +197,6 @@ export default function ForecastChart({ historicalData, baselinePredictions, sce
                 />
                 {scenarioPredictions && (
                     <>
-                    {/* Scenario Confidence Area */}
                     <Area
                         type="monotone"
                         dataKey="scenarioUpper"
@@ -242,7 +230,7 @@ export default function ForecastChart({ historicalData, baselinePredictions, sce
                     />
                     </>
                 )}
-            </LineChart>
+            </RechartsLineChart>
             </ResponsiveContainer>
         </ChartContainer>
          <p className="text-xs text-muted-foreground text-center pt-2">Note: Chart shows historical sales and AI-predicted demand points. Shaded confidence interval is illustrative.</p>
@@ -250,5 +238,3 @@ export default function ForecastChart({ historicalData, baselinePredictions, sce
     </Card>
   );
 }
-
-    
