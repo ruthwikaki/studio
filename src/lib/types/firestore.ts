@@ -53,10 +53,19 @@ export interface InventoryItemDocument {
 // --------------------
 // Suppliers Collection
 // --------------------
+export interface SupplierProductInfo {
+  productId: string; // SKU or ID from inventory
+  sku: string;
+  name: string; // Product name
+  lastPrice?: number;
+  moqForItem?: number; // Minimum Order Quantity specific to this item from this supplier
+}
+
 export interface SupplierDocument {
   id: string; // Firestore document ID
   userId: string; // Link to the user/company
   name: string;
+  logoUrl?: string;
   email?: string;
   phone?: string;
   address?: {
@@ -72,11 +81,17 @@ export interface SupplierDocument {
     phone?: string;
   };
   leadTimeDays?: number; // Average lead time in days
-  reliability?: 'high' | 'medium' | 'low'; // Subjective or calculated
-  productsSupplied?: Array<{ productId: string; sku: string; name: string }>; // List of product SKUs or IDs they supply
+  reliabilityScore?: number; // Score from 0-100
+  paymentTerms?: string; // e.g., "Net 30", "Due on receipt"
+  moq?: number; // General Minimum Order Quantity for the supplier
+  productsSupplied?: SupplierProductInfo[]; // List of products they supply
   notes?: string;
   lastOrderDate?: Timestamp;
+  totalSpend?: number; // Calculated total spend with this supplier
+  onTimeDeliveryRate?: number; // Calculated OTD rate (0-1)
+  qualityRating?: number; // Average quality rating (e.g., 1-5)
   createdAt: Timestamp;
+  lastUpdated: Timestamp;
 }
 
 // --------------------
