@@ -23,6 +23,7 @@ import { useAnalyticsDashboard } from "@/hooks/useAnalytics";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 
 
 const recentActivities = [
@@ -205,3 +206,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+
