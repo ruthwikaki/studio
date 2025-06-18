@@ -1,4 +1,4 @@
-// Implemented Genkit flow for AI-powered chat interface for natural language inventory queries.
+
 'use server';
 
 /**
@@ -35,7 +35,7 @@ const prompt = ai.definePrompt({
   name: 'inventoryInsightsChatPrompt',
   input: {schema: InventoryInsightsChatInputSchema},
   output: {schema: InventoryInsightsChatOutputSchema},
-  prompt: `You are a helpful AI assistant specialized in providing insights about inventory data.
+  prompt: `You are a helpful AI assistant specialized in providing insights about inventory data for a platform called SupplyChainAI.
 
   You will be provided with inventory data in JSON format and a natural language query from the user.
   Your goal is to answer the user's query based on the provided inventory data.
@@ -54,7 +54,7 @@ const prompt = ai.definePrompt({
 
   User Query: {{{query}}}
 
-  Response:`, // MUST be called Response
+  Response:`,
   config: {
     safetySettings: [
       {
@@ -85,7 +85,9 @@ const inventoryInsightsChatFlow = ai.defineFlow(
   },
   async input => {
     const {output} = await prompt(input);
-    return output!;
+    if (!output) {
+      throw new Error("AI failed to generate a response.");
+    }
+    return output;
   }
 );
-

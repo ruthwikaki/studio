@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 body {
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Inter', sans-serif;
 }
 
 @layer base {
@@ -22,10 +22,10 @@ body {
     --muted-foreground: 210 40% 45.1%;
     --accent: 283 40% 53%; /* Purple #9B59B6 */
     --accent-foreground: 0 0% 100%; /* White text on accent */
-    --destructive: 0 84.2% 60.2%; /* Red #E74C3C (from user proposal, matches default destructive) */
+    --destructive: 0 84.2% 60.2%; /* Red #E74C3C */
     --destructive-foreground: 0 0% 98%;
-    --warning: 38 92% 50%; /* Orange #F39C12 (user proposal) */
-    --success: 145 63% 42%; /* Green #27AE60 (user proposal) */
+    --warning: 38 92% 50%; /* Orange #F39C12 */
+    --success: 145 63% 42%; /* Green #27AE60 */
     --border: 210 40% 89.8%;
     --input: 210 40% 89.8%;
     --ring: 207 70% 53%; /* Primary color for rings */
@@ -36,35 +36,34 @@ body {
     --chart-5: 27 87% 67%;
     --radius: 0.5rem;
 
-    /* Sidebar specific theme - can be adjusted if sidebar should use main theme colors */
-    --sidebar-background: 210 30% 98%; /* Lighter than main background for distinct sidebar */
+    --sidebar-background: 210 30% 98%; 
     --sidebar-foreground: 210 25% 25%; 
-    --sidebar-primary: 207 70% 53%; /* Primary color for active items */
+    --sidebar-primary: 207 70% 53%; 
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 210 30% 90%; /* Hover/accent for sidebar items */
+    --sidebar-accent: 210 30% 90%; 
     --sidebar-accent-foreground: 210 25% 15%;
     --sidebar-border: 210 20% 88%;
     --sidebar-ring: 207 70% 53%;
   }
   .dark {
-    --background: 210 20% 9%; /* Dark background */
+    --background: 210 20% 9%; 
     --foreground: 210 40% 98%;
     --card: 210 20% 12%;
     --card-foreground: 210 40% 98%;
     --popover: 210 20% 9%;
     --popover-foreground: 210 40% 98%;
-    --primary: 207 70% 53%; /* Strong blue #3498DB */
+    --primary: 207 70% 53%; 
     --primary-foreground: 0 0% 100%;
     --secondary: 210 20% 15%;
     --secondary-foreground: 210 40% 98%;
     --muted: 210 20% 15%;
     --muted-foreground: 210 40% 63.9%;
-    --accent: 283 40% 53%; /* Purple #9B59B6 */
+    --accent: 283 40% 53%; 
     --accent-foreground: 0 0% 100%;
-    --destructive: 0 72% 51%; /* Adjusted Red for dark mode */
+    --destructive: 0 72% 51%; 
     --destructive-foreground: 0 0% 98%;
-    --warning: 38 92% 50%; /* Orange #F39C12 */
-    --success: 145 63% 49%; /* Green #27AE60 */
+    --warning: 38 92% 50%; 
+    --success: 145 63% 49%; 
     --border: 210 20% 20%;
     --input: 210 20% 20%;
     --ring: 207 70% 53%; 
@@ -85,6 +84,9 @@ body {
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-body antialiased;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-headline;
   }
 }

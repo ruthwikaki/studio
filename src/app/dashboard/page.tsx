@@ -1,25 +1,46 @@
+
 import DashboardCard from "@/components/dashboard/DashboardCard";
-import { AlertTriangle, Archive, PackageX, ListOrdered, RefreshCw, TrendingUp, TrendingDown, DollarSign } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { 
+  AlertTriangle, 
+  Archive, 
+  PackageX, 
+  ListOrdered, 
+  DollarSign,
+  ClipboardList, // For Pending Orders
+  UploadCloud, // For Upload Inventory
+  FilePlus2, // For Create PO
+  MessageCircle, // For Chat with AI
+  ListChecks, // For Recent Activity
+  TrendingUp, // For Inventory Turnover
+  Award, // For Top Products
+  Bell // For View Alerts (can also be AlertCircle)
+} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
+import Image from "next/image";
 
-const lowStockItems = [
-  { id: "SKU005", name: "Laptop Stand", quantity: 5, reorderPoint: 10 },
-  { id: "SKU007", name: "Premium Mousepad", quantity: 12, reorderPoint: 15 },
-];
+const lowStockItemsCount = 2; // Example data
+const overStockItemsCount = 2; // Example data
+const pendingOrdersCount = 5;
+const todaysRevenue = "$1,250.00";
 
-const overStockItems = [
- { id: "SKU001", name: "Blue T-Shirt", quantity: 150, idealMax: 100 },
- { id: "SKU009", name: "Winter Scarf", quantity: 250, idealMax: 50 },
+const recentActivities = [
+  { id: 1, type: "Inventory Update", description: "SKU001 quantity changed to 145", time: "2m ago" },
+  { id: 2, type: "New Order", description: "Order #1023 placed", time: "15m ago" },
+  { id: 3, type: "Low Stock Alert", description: "SKU004 is low on stock", time: "1h ago" },
+  { id: 4, type: "Supplier Update", description: "ApparelCo contact updated", time: "3h ago" },
 ];
 
 export default function DashboardPage() {
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-3xl font-headline font-semibold text-foreground">Inventory Overview</h1>
+      <h1 className="text-3xl font-headline font-semibold text-foreground">Dashboard Overview</h1>
       
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {/* KPI Cards */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <DashboardCard
           title="Total Inventory Value"
           icon={DollarSign}
@@ -27,100 +48,124 @@ export default function DashboardPage() {
           description="+5.2% from last month"
         />
         <DashboardCard
-          title="Items Low on Stock"
+          title="Low Stock Items"
           icon={AlertTriangle}
-          value={lowStockItems.length}
+          value={lowStockItemsCount}
           description="Needs immediate attention"
           valueClassName="text-warning"
         />
         <DashboardCard
-          title="Overstocked Items"
-          icon={Archive}
-          value={overStockItems.length}
-          description="Potential dead stock risk"
+          title="Pending Orders"
+          icon={ClipboardList}
+          value={pendingOrdersCount}
+          description="Awaiting fulfillment"
         />
         <DashboardCard
-          title="Turnover Rate"
-          icon={RefreshCw}
-          value="4.2"
-          description="Average times stock sold"
+          title="Today's Revenue"
+          icon={DollarSign}
+          value={todaysRevenue}
+          description="Track daily sales"
+          valueClassName="text-success"
         />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="shadow-lg">
+      {/* Quick Actions & Recent Activity */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-1 shadow-lg">
           <CardHeader>
-            <CardTitle className="font-headline flex items-center">
-              <AlertTriangle className="h-5 w-5 mr-2 text-warning" /> Low Stock Alerts
-            </CardTitle>
+            <CardTitle className="font-headline text-lg">Quick Actions</CardTitle>
           </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Item</TableHead>
-                  <TableHead>SKU</TableHead>
-                  <TableHead className="text-right">Quantity</TableHead>
-                  <TableHead className="text-right">Reorder Point</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {lowStockItems.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="font-medium">{item.name}</TableCell>
-                    <TableCell>{item.id}</TableCell>
-                    <TableCell className="text-right text-warning font-semibold">{item.quantity}</TableCell>
-                    <TableCell className="text-right">{item.reorderPoint}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+          <CardContent className="grid grid-cols-2 gap-3">
+            <Button variant="outline" className="h-auto py-3 flex-col gap-1" asChild>
+              <Link href="/data-import">
+                <UploadCloud className="h-5 w-5 text-primary" />
+                <span className="text-xs">Upload Inventory</span>
+              </Link>
+            </Button>
+            <Button variant="outline" className="h-auto py-3 flex-col gap-1" asChild>
+              <Link href="/orders">
+                <FilePlus2 className="h-5 w-5 text-primary" />
+                <span className="text-xs">Create PO</span>
+              </Link>
+            </Button>
+            <Button variant="outline" className="h-auto py-3 flex-col gap-1">
+              <Bell className="h-5 w-5 text-warning" />
+              <span className="text-xs">View Alerts</span>
+            </Button>
+            <Button variant="outline" className="h-auto py-3 flex-col gap-1" asChild>
+              <Link href="/ai-chat">
+                <MessageCircle className="h-5 w-5 text-primary" />
+                <span className="text-xs">Chat with AI</span>
+              </Link>
+            </Button>
           </CardContent>
         </Card>
 
-        <Card className="shadow-lg">
+        <Card className="lg:col-span-2 shadow-lg">
           <CardHeader>
-            <CardTitle className="font-headline flex items-center">
-             <Archive className="h-5 w-5 mr-2 text-blue-500" /> Overstock Identification
+            <CardTitle className="font-headline text-lg flex items-center">
+              <ListChecks className="h-5 w-5 mr-2 text-primary" />
+              Recent Activity
             </CardTitle>
           </CardHeader>
           <CardContent>
-             <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Item</TableHead>
-                  <TableHead>SKU</TableHead>
-                  <TableHead className="text-right">Quantity</TableHead>
-                  <TableHead className="text-right">Ideal Max</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {overStockItems.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="font-medium">{item.name}</TableCell>
-                    <TableCell>{item.id}</TableCell>
-                    <TableCell className="text-right text-blue-500 font-semibold">{item.quantity}</TableCell>
-                    <TableCell className="text-right">{item.idealMax}</TableCell>
-                  </TableRow>
+            {recentActivities.length > 0 ? (
+              <ul className="space-y-3">
+                {recentActivities.map((activity) => (
+                  <li key={activity.id} className="flex items-center justify-between text-sm">
+                    <div>
+                      <span className="font-medium">{activity.type}:</span> {activity.description}
+                    </div>
+                    <span className="text-xs text-muted-foreground">{activity.time}</span>
+                  </li>
                 ))}
-              </TableBody>
-            </Table>
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">No recent activity to display. System alerts and updates will appear here.</p>
+            )}
           </CardContent>
         </Card>
       </div>
 
+      {/* Mini Analytics Charts */}
       <div className="grid gap-6 md:grid-cols-2">
-        <DashboardCard title="Dead Stock Analysis" icon={PackageX} description="Identifying non-moving items">
-          <p className="text-lg font-semibold">$5,800 value in dead stock</p>
-          <p className="text-xs text-muted-foreground">Consider promotions or liquidation.</p>
-        </DashboardCard>
-        <DashboardCard title="ABC Categorization" icon={ListOrdered} description="Prioritizing inventory items">
-          <div className="space-y-2 mt-2">
-            <div className="flex justify-between items-center"><span>Category A (High Value):</span> <Badge variant="default">20% items, 70% value</Badge></div>
-            <div className="flex justify-between items-center"><span>Category B (Medium Value):</span> <Badge variant="secondary">30% items, 20% value</Badge></div>
-            <div className="flex justify-between items-center"><span>Category C (Low Value):</span> <Badge variant="outline">50% items, 10% value</Badge></div>
-          </div>
-        </DashboardCard>
+        <Card className="shadow-lg">
+          <CardHeader>
+            <CardTitle className="font-headline text-lg flex items-center">
+              <TrendingUp className="h-5 w-5 mr-2 text-primary" />
+              Inventory Turnover
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col items-center justify-center text-center min-h-[200px]">
+            <Image 
+              src="https://placehold.co/300x150.png" 
+              alt="Inventory turnover chart placeholder" 
+              width={300} 
+              height={150}
+              data-ai-hint="line graph"
+              className="rounded-md shadow-sm mb-3"
+            />
+            <p className="text-sm text-muted-foreground">Inventory turnover rate chart coming soon.</p>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-lg">
+          <CardHeader>
+            <CardTitle className="font-headline text-lg flex items-center">
+              <Award className="h-5 w-5 mr-2 text-primary" />
+              Top 5 Products by Value
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="min-h-[200px]">
+            <p className="text-sm text-muted-foreground mb-2">Product value breakdown:</p>
+            <ul className="space-y-2 text-sm">
+              {["Product A - $15,000", "Product B - $12,500", "Product C - $9,800", "Product D - $7,200", "Product E - $5,500"].map(item => (
+                 <li key={item} className="flex justify-between"><span>{item.split(" - ")[0]}</span> <Badge variant="secondary">{item.split(" - ")[1]}</Badge></li>
+              ))}
+            </ul>
+            <p className="text-xs text-muted-foreground mt-2">Live chart displaying top products by value is under development.</p>
+          </CardContent>
+        </Card>
       </div>
       
     </div>
