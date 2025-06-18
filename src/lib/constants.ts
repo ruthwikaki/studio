@@ -1,3 +1,4 @@
+
 import {
   LayoutDashboard,
   UploadCloud,
@@ -12,7 +13,7 @@ import {
   Search, // For Global Search (used in Header)
   FilePlus2, // For Create PO (Dashboard Quick Action)
   ListChecks, // For Recent Activity (Dashboard)
-  TrendingUp, // For Inventory Turnover Chart (Dashboard)
+  TrendingUp, // For Inventory Turnover Chart (Dashboard) & Forecasting Nav
   Award, // For Top Products (Dashboard)
   Paperclip, // For AI Chat Attachment
 } from 'lucide-react';
@@ -29,6 +30,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, matchSegments: 1 },
   { href: '/inventory', label: 'Inventory', icon: Boxes, matchSegments: 1 },
   { href: '/analytics', label: 'Analytics', icon: BarChart3, matchSegments: 1 },
+  { href: '/analytics/forecasting', label: 'Forecasting', icon: TrendingUp, matchSegments: 2 },
   { href: '/suppliers', label: 'Suppliers', icon: Truck, matchSegments: 1 },
   { href: '/orders', label: 'Orders', icon: ClipboardList, matchSegments: 1 },
   { href: '/ai-chat', label: 'AI Assistant', icon: MessageCircle, matchSegments: 1 },
@@ -59,3 +61,5 @@ export const MOCK_INVENTORY_DATA = [
 ];
 
 export const MOCK_INVENTORY_JSON_STRING = JSON.stringify(MOCK_INVENTORY_DATA.map(({ status, ...rest }) => rest), null, 2); // For AI Chat, remove dynamic status
+
+    
