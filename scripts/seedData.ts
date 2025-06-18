@@ -182,6 +182,7 @@ const mockOrdersRaw: MockOrderRawItem[] = [
     totalAmount: 169.97,
     status: 'completed' as OrderStatus,
     orderDate: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
+    // No expectedDate for this sales order for variety
     actualDeliveryDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
     createdBy: MOCK_USER_ID_MANAGER,
   },
@@ -354,14 +355,23 @@ async function seedDatabase() {
   mockOrders.forEach(order => {
     const orderDocRef = db.collection('orders').doc(order.id);
     // Construct the object for Firestore, ensuring all Date fields are converted to AdminTimestamp
-    const firestoreOrderData = {
-      ...order, // Spread the order object which has JS Dates
+    // and optional fields are only added if they exist.
+    const { expectedDate, actualDeliveryDate, ...restOfOrder } = order;
+    
+    const firestoreOrderData: any = {
+      ...restOfOrder,
       orderDate: admin.firestore.Timestamp.fromDate(order.orderDate),
-      expectedDate: order.expectedDate ? admin.firestore.Timestamp.fromDate(order.expectedDate) : undefined,
-      actualDeliveryDate: order.actualDeliveryDate ? admin.firestore.Timestamp.fromDate(order.actualDeliveryDate) : undefined,
       createdAt: admin.firestore.Timestamp.fromDate(order.createdAt),
       lastUpdated: admin.firestore.Timestamp.fromDate(order.lastUpdated)
     };
+
+    if (expectedDate) {
+      firestoreOrderData.expectedDate = admin.firestore.Timestamp.fromDate(expectedDate);
+    }
+    if (actualDeliveryDate) {
+      firestoreOrderData.actualDeliveryDate = admin.firestore.Timestamp.fromDate(actualDeliveryDate);
+    }
+    
     batch.set(orderDocRef, firestoreOrderData);
   });
 
@@ -380,11 +390,16 @@ async function seedDatabase() {
   console.log(`Seeding ${mockDocuments.length} document metadata entries...`);
   mockDocuments.forEach(doc => {
     const docRef = db.collection('documents').doc(doc.id);
-    batch.set(docRef, { 
-        ...doc, 
-        uploadedAt: admin.firestore.Timestamp.fromDate(doc.uploadedAt), 
-        processedAt: doc.processedAt ? admin.firestore.Timestamp.fromDate(doc.processedAt) : undefined 
-    });
+    const { processedAt, ...restOfDoc } = doc;
+
+    const firestoreDocumentData: any = {
+      ...restOfDoc,
+      uploadedAt: admin.firestore.Timestamp.fromDate(doc.uploadedAt),
+    };
+    if (processedAt) {
+      firestoreDocumentData.processedAt = admin.firestore.Timestamp.fromDate(processedAt);
+    }
+    batch.set(docRef, firestoreDocumentData);
   });
 
   console.log(`Seeding ${mockChatSessions.length} chat sessions...`);
@@ -392,8 +407,7 @@ async function seedDatabase() {
     const chatRef = db.collection('chat_sessions').doc(chat.id);
     batch.set(chatRef, { 
         ...chat, 
-        // messages are already AdminTimestamps if ChatMessage type is correctly using AdminTimestamp
-        messages: chat.messages.map(m => ({...m, timestamp: m.timestamp instanceof Date ? admin.firestore.Timestamp.fromDate(m.timestamp) : m.timestamp })), // Ensure conversion if needed
+        messages: chat.messages.map(m => ({...m, timestamp: m.timestamp instanceof Date ? admin.firestore.Timestamp.fromDate(m.timestamp) : m.timestamp })),
         createdAt: admin.firestore.Timestamp.fromDate(chat.createdAt), 
         lastMessageAt: admin.firestore.Timestamp.fromDate(chat.lastMessageAt)
     });
@@ -412,7 +426,6 @@ async function seedDatabase() {
   console.log("Products (first 2):", JSON.stringify(mockProducts.slice(0,2), null, 2) + "\n  ...");
   console.log("Inventory Stock (first 2):", JSON.stringify(mockInventoryStock.slice(0,2), null, 2) + "\n  ...");
   console.log("Orders (first 1):", JSON.stringify(mockOrders.slice(0,1), (key, value) => {
-    // Custom replacer to show Date objects as ISO strings for readability in console
     if (value instanceof Date) {
       return value.toISOString();
     }
