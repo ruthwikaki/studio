@@ -13,17 +13,19 @@ import type {
 
 // --- Firebase Admin SDK Initialization ---
 try {
-  // IMPORTANT: Replace "path/to/serviceAccountKey.json" with the actual path to your Firebase service account key.
-  const serviceAccount = require("../path/to/your-service-account-key.json"); 
+  // IMPORTANT: Ensure the path to your Firebase service account key is correct.
+  // This file should be in the root of your project if using the path below.
+  // DO NOT COMMIT YOUR ACTUAL SERVICE ACCOUNT KEY TO PUBLIC REPOSITORIES.
+  const serviceAccount = require("../service-account-key.json"); 
   if (!admin.apps.length) {
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
-      databaseURL: "https://aria-jknbu-default-rtdb.firebaseio.com" // User provided DB URL
+      databaseURL: "https://aria-jknbu-default-rtdb.firebaseio.com" // Your provided DB URL
     });
     console.log("Firebase Admin SDK initialized.");
   }
 } catch (error) {
-  console.error("Error initializing Firebase Admin SDK. Make sure your service account key is correct and accessible at the specified path.");
+  console.error("Error initializing Firebase Admin SDK. Make sure your service account key is correct and accessible at '../service-account-key.json'.");
   console.error("Error details:", error);
   process.exit(1); // Exit if SDK cannot be initialized
 }
