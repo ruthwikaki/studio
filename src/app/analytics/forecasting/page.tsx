@@ -223,11 +223,9 @@ export default function ProfessionalForecastingPage() {
                 <span className="text-xs font-mono text-muted-foreground">fx</span>
                 <Input readOnly placeholder="Selected cell formula/value (placeholder)" className="h-7 text-xs flex-1" />
             </div>
-
-            <Table className="min-w-full whitespace-nowrap"> {/* Ensure table can scroll horizontally */}
-              <TableHeader className="sticky top-0 bg-background/90 backdrop-blur-sm z-10"> {/* Make header sticky */}
+            <Table className="min-w-full whitespace-nowrap"><TableHeader className="sticky top-0 bg-background/90 backdrop-blur-sm z-10">
                 <TableRow>
-                  <TableHead className="w-[50px] p-2 sticky left-0 bg-background/90 z-20"> {/* Sticky checkbox column */}
+                  <TableHead className="w-[50px] p-2 sticky left-0 bg-background/90 z-20">
                     <Checkbox 
                         onCheckedChange={(checked) => handleSelectAll(!!checked)}
                         checked={numSelected === mockProducts.length && mockProducts.length > 0}
@@ -248,8 +246,7 @@ export default function ProfessionalForecastingPage() {
                   {visibleColumns.bestModel && <TableHead className="w-[120px] p-2 text-center cursor-pointer" onClick={() => requestSort('bestModel')}>Best Model</TableHead>}
                    <TableHead className="w-[50px] p-2 text-center">Edit</TableHead>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
+              </TableHeader><TableBody>
                 {mockProducts.map((product) => {
                   const forecasts = mockForecastData(product.currentStock);
                   // Mock: Randomly pick a best model for visual
@@ -311,8 +308,7 @@ export default function ProfessionalForecastingPage() {
                     </TableRow>
                   );
                 })}
-              </TableBody>
-            </Table>
+              </TableBody></Table>
           </CardContent>
           <CardFooter className="p-3 border-t text-xs text-muted-foreground">
             {numSelected} of {mockProducts.length} products selected. (Excel-like status bar placeholder)
@@ -373,5 +369,3 @@ export default function ProfessionalForecastingPage() {
     </div>
   );
 }
-
-    
