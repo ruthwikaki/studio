@@ -1,20 +1,37 @@
 // src/lib/types/firestore.ts
-import type { Timestamp } from 'firebase/firestore'; // Assuming you'll use Firebase Web SDK on client, or Admin SDK on server
+import type { Timestamp } from 'firebase/firestore';
+
+// --------------------
+// Companies Collection
+// --------------------
+export interface CompanyDocument {
+  id: string; // Firestore document ID
+  name: string;
+  plan: 'free' | 'starter' | 'pro';
+  createdAt: Timestamp;
+  settings?: {
+    // Company-specific settings
+    timezone?: string;
+    currency?: string;
+  };
+  ownerId: string; // UID of the user who owns/created the company
+}
 
 // --------------------
 // Users Collection
 // --------------------
-export interface UserProfile {
-  uid: string;
+export interface UserDocument {
+  uid: string; // Firebase Auth UID, also used as Firestore document ID
   email: string | null;
-  companyName?: string;
-  role?: 'admin' | 'manager' | 'viewer';
-  plan?: 'free' | 'pro' | 'enterprise';
+  companyId: string; // Link to the companies collection document ID
+  role: 'owner' | 'admin' | 'manager' | 'viewer'; // Role within the company
+  displayName?: string;
+  photoURL?: string;
   createdAt: Timestamp;
+  lastSignInAt?: Timestamp;
   settings?: {
     notificationsEnabled?: boolean;
     prefersDarkMode?: boolean;
-    // other user-specific settings
   };
 }
 
@@ -22,22 +39,22 @@ export interface UserProfile {
 // Inventory Collection
 // --------------------
 export interface InventoryItemDocument {
-  id: string; // Firestore document ID, can be same as sku if unique
-  userId: string; // Link to the user/company (owner of this item)
-  sku: string; // Stock Keeping Unit - should be unique per user
+  id: string; // Firestore document ID, can be same as sku if unique per company
+  companyId: string; // Link to the company
+  sku: string; // Stock Keeping Unit - should be unique per company
   name: string;
   description?: string;
   quantity: number;
   unitCost: number;
   reorderPoint: number;
-  reorderQuantity?: number; // How much to reorder when reorderPoint is hit
+  reorderQuantity?: number;
   supplierId?: string; // Link to suppliers collection document ID
-  location?: string; // e.g., Warehouse A, Shelf B2
+  location?: string;
   category?: string;
   lastUpdated: Timestamp;
-  lowStockAlertSent?: boolean; // To avoid sending multiple alerts
-  tags?: string[]; // For better filtering/organization
-  imageUrl?: string; // URL to product image
+  lowStockAlertSent?: boolean;
+  tags?: string[];
+  imageUrl?: string;
   dimensions?: {
     length?: number;
     width?: number;
@@ -48,22 +65,24 @@ export interface InventoryItemDocument {
     value?: number;
     unit?: 'kg' | 'lb';
   };
+  createdBy?: string; // UID of user who created it
+  notes?: string;
 }
 
 // --------------------
 // Suppliers Collection
 // --------------------
 export interface SupplierProductInfo {
-  productId: string; // SKU or ID from inventory
+  productId: string; // SKU from inventory
   sku: string;
-  name: string; // Product name
+  name: string;
   lastPrice?: number;
-  moqForItem?: number; // Minimum Order Quantity specific to this item from this supplier
+  moqForItem?: number;
 }
 
 export interface SupplierDocument {
   id: string; // Firestore document ID
-  userId: string; // Link to the user/company
+  companyId: string; // Link to the company
   name: string;
   logoUrl?: string;
   email?: string;
@@ -80,18 +99,19 @@ export interface SupplierDocument {
     email?: string;
     phone?: string;
   };
-  leadTimeDays?: number; // Average lead time in days
+  leadTimeDays?: number;
   reliabilityScore?: number; // Score from 0-100
-  paymentTerms?: string; // e.g., "Net 30", "Due on receipt"
-  moq?: number; // General Minimum Order Quantity for the supplier
-  productsSupplied?: SupplierProductInfo[]; // List of products they supply
+  paymentTerms?: string;
+  moq?: number;
+  productsSupplied?: SupplierProductInfo[];
   notes?: string;
   lastOrderDate?: Timestamp;
-  totalSpend?: number; // Calculated total spend with this supplier
-  onTimeDeliveryRate?: number; // Calculated OTD rate (0-1)
-  qualityRating?: number; // Average quality rating (e.g., 1-5)
+  totalSpend?: number;
+  onTimeDeliveryRate?: number;
+  qualityRating?: number;
   createdAt: Timestamp;
   lastUpdated: Timestamp;
+  createdBy?: string; // UID of user
 }
 
 // --------------------
@@ -108,22 +128,25 @@ export type OrderItem = {
 
 export interface OrderDocument {
   id: string; // Firestore document ID
-  userId: string; // Link to the user/company
-  orderNumber: string; // User-friendly order number, should be unique per user
-  type: 'purchase' | 'sale' | 'transfer'; // Type of order
-  supplierId?: string; // For purchase orders, link to supplier document ID
+  companyId: string; // Link to the company
+  orderNumber: string;
+  type: 'purchase' | 'sales' | 'transfer';
+  supplierId?: string;
   customerId?: string; // For sales orders
   items: OrderItem[];
   totalAmount: number;
   status:
     | 'pending'
-    | 'processing'
+    | 'awaiting_payment'
+    | 'awaiting_shipment'
+    | 'awaiting_delivery'
     | 'shipped'
     | 'delivered'
+    | 'completed'
     | 'cancelled'
-    | 'completed';
+    | 'disputed';
   orderDate: Timestamp;
-  expectedDate?: Timestamp; // Expected delivery/shipping date
+  expectedDate?: Timestamp;
   actualDeliveryDate?: Timestamp;
   notes?: string;
   shippingAddress?: {
@@ -133,37 +156,69 @@ export interface OrderDocument {
     zipCode?: string;
     country?: string;
   };
+  billingAddress?: {
+    street?: string;
+    city?: string;
+    state?: string;
+    zipCode?: string;
+    country?: string;
+  };
   trackingNumber?: string;
+  shippingCost?: number;
+  taxAmount?: number;
+  discountAmount?: number;
+  paymentMethod?: string;
+  transactionId?: string;
   createdAt: Timestamp;
   lastUpdated: Timestamp;
+  createdBy?: string; // UID of user
 }
+
+// --------------------
+// Documents Collection
+// (For OCR'd invoices, POs, receipts etc.)
+// --------------------
+export interface DocumentMetadata {
+  id: string; // Firestore document ID
+  companyId: string; // Link to the company
+  fileName: string;
+  fileType: string; // e.g., 'application/pdf', 'image/jpeg'
+  fileSize: number; // in bytes
+  fileUrl: string; // Cloud Storage URL
+  extractedData?: any; // Store the structured data from Genkit (InvoiceData, PurchaseOrderData, etc.)
+  status: 'uploading' | 'pending_ocr' | 'ocr_complete' | 'processing' | 'processed' | 'error' | 'archived';
+  documentTypeHint?: 'invoice' | 'purchase_order' | 'receipt' | 'auto_detect' | 'unknown';
+  linkedOrderId?: string; // Optional link to an order in the 'orders' collection
+  notes?: string;
+  uploadedAt: Timestamp;
+  processedAt?: Timestamp;
+  uploadedBy?: string; // UID of user
+  ocrConfidence?: number; // Overall confidence from OCR step if applicable
+  extractionConfidence?: number; // Overall confidence from Genkit extraction step
+}
+
 
 // --------------------
 // Analytics Collection
-// (This might be more of a summary document, updated periodically,
-// or you might store raw data points if doing time-series analysis directly in Firestore,
-// though specialized analytics databases are often better for complex queries)
 // --------------------
 export interface AnalyticsDataPoint {
-  date: Timestamp; // The date for which this data point is recorded (e.g., end of day)
+  date: Timestamp;
   totalInventoryValue: number;
-  turnoverRate?: number; // Calculated for a period ending on this date
+  turnoverRate?: number;
   lowStockItemsCount: number;
   outOfStockItemsCount: number;
-  salesVolume?: number; // If tracking sales
-  purchaseVolume?: number; // If tracking purchases
+  salesVolume?: number;
+  purchaseVolume?: number;
 }
 
 export interface AnalyticsDocument {
-  id: string; // e.g., 'daily_summary_YYYY-MM-DD' or 'user_main_analytics'
-  userId: string;
+  id: string; // e.g., 'companyId_summary' or 'daily_summary_YYYY-MM-DD_companyId'
+  companyId: string;
   lastCalculated: Timestamp;
-  // KPIs that are snapshots or aggregated
   currentTotalInventoryValue?: number;
-  averageTurnoverRate?: number; // e.g., last 30 days
+  averageTurnoverRate?: number;
   topPerformingProducts?: Array<{ sku: string; name: string; value?: number; sales?: number }>;
   slowMovingProducts?: Array<{ sku: string; name: string; quantity: number; daysSinceLastSale?: number }>;
-  // AI Generated Insights (could be stored here or in a separate collection)
   insights?: Array<{
     id: string;
     text: string;
@@ -171,31 +226,29 @@ export interface AnalyticsDocument {
     generatedAt: Timestamp;
     relatedSkus?: string[];
   }>;
-  // Potentially store a series of data points for charts if not too large
-  historicalData?: AnalyticsDataPoint[]; // e.g., last 30-90 days for dashboard charts
+  historicalData?: AnalyticsDataPoint[];
 }
-
 
 // --------------------
 // Chat Sessions Collection
 // --------------------
 export interface ChatMessage {
-  role: 'user' | 'assistant'; // 'system' messages might be part of the initial prompt in the flow
+  role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: Timestamp;
-  // Potentially add more fields like 'toolCalls' or 'toolResponses' if using Genkit tools heavily
+  // Potentially 'toolCalls', 'toolResponses' if using Genkit tools
 }
 
 export interface ChatSessionDocument {
   id: string; // Firestore document ID
-  userId: string;
+  companyId: string;
+  userId: string; // User who initiated or is part of this session
   messages: ChatMessage[];
   context?: {
-    // Information about the context of the chat
-    loadedInventoryDataSummary?: string; // e.g., "Data from file X uploaded on Y"
-    currentFocus?: string; // e.g., "Analyzing low stock items"
+    loadedInventoryDataSummary?: string;
+    currentFocus?: string;
   };
   createdAt: Timestamp;
   lastMessageAt: Timestamp;
-  title?: string; // Optional: user-defined or AI-generated title for the session
+  title?: string;
 }

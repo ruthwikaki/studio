@@ -1,0 +1,84 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper function to check if a user belongs to a company and has a specific role
+    function isUserInCompany(companyId, userId) {
+      return exists(/databases/$(database)/documents/users/$(userId)) &&
+             get(/databases/$(database)/documents/users/$(userId)).data.companyId == companyId;
+    }
+
+    function getUserRole(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data.role;
+    }
+
+    function isSignedIn() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    function getCompanyIdForUser(userId) {
+        // Assumes user document exists and has companyId
+        return get(/databases/$(database)/documents/users/$(userId)).data.companyId;
+    }
+    
+    // If using custom claims (set via Admin SDK, e.g. in a Firebase Function):
+    // function getCompanyIdFromClaim() {
+    //   return request.auth.token.companyId;
+    // }
+    // function getUserRoleFromClaim() {
+    //  return request.auth.token.role;
+    // }
+
+    // Companies:
+    // - Owners/Admins of the company can read/write.
+    // - Other users in the company can read.
+    match /companies/{companyId} {
+      allow read: if isSignedIn() && isUserInCompany(companyId, request.auth.uid);
+      allow create: if isSignedIn(); // Typically, company creation is a special process.
+      allow update, delete: if isSignedIn() && 
+                               isUserInCompany(companyId, request.auth.uid) &&
+                               (getUserRole(request.auth.uid) == 'owner' || getUserRole(request.auth.uid) == 'admin');
+    }
+
+    // Users:
+    // - Users can read/write their own profile.
+    // - Admins/Owners of the same company can read other users' profiles within their company.
+    match /users/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || 
+                    (isUserInCompany(getCompanyIdForUser(userId), request.auth.uid) && 
+                     (getUserRole(request.auth.uid) == 'admin' || getUserRole(request.auth.uid) == 'owner')));
+      allow create: if isSignedIn(); // Usually after Firebase Auth user creation.
+      allow update: if isSignedIn() && request.auth.uid == userId;
+      // Deletion of user profiles might be restricted or handled by admin functions.
+      allow delete: if isSignedIn() && request.auth.uid == userId; // Or only by owner/admin
+    }
+
+    // Generic rule for company-specific data (inventory, orders, suppliers, documents, analytics, chatSessions)
+    // Assumes each document in these collections has a 'companyId' field.
+    // And that the authenticated user has a 'companyId' associated with them (via their user document).
+    match /{collection}/{docId} 
+      where collection in ['inventory', 'orders', 'suppliers', 'documents', 'analytics', 'chatSessions'] {
+      
+      allow read, write: if isSignedIn() && resource.data.companyId == getCompanyIdForUser(request.auth.uid);
+      
+      // More granular write access based on role:
+      // Example: Only 'admin' or 'manager' or 'owner' can create/update/delete. 'viewer' can only read.
+      // allow read: if isSignedIn() && resource.data.companyId == getCompanyIdForUser(request.auth.uid);
+      // allow create: if isSignedIn() && request.resource.data.companyId == getCompanyIdForUser(request.auth.uid) &&
+      //                  (getUserRole(request.auth.uid) in ['owner', 'admin', 'manager']);
+      // allow update, delete: if isSignedIn() && resource.data.companyId == getCompanyIdForUser(request.auth.uid) &&
+      //                          (getUserRole(request.auth.uid) in ['owner', 'admin', 'manager']);
+
+      // Note: For 'create', use request.resource.data.companyId. For read/update/delete, use resource.data.companyId.
+    }
+    
+    // Example for chatSessions also checking userId for user-specific chats within a company
+    // match /chatSessions/{sessionId} {
+    //   allow read, write: if isSignedIn() && 
+    //                         resource.data.companyId == getCompanyIdForUser(request.auth.uid) &&
+    //                         resource.data.userId == request.auth.uid; // Or if user is admin in company
+    // }
+
+  }
+}
