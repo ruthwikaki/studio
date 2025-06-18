@@ -16,6 +16,7 @@ import {
   TrendingUp, // For Inventory Turnover Chart (Dashboard) & Forecasting Nav
   Award, // For Top Products (Dashboard)
   Paperclip, // For AI Chat Attachment
+  FileText, // For Documents page
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -33,6 +34,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/analytics/forecasting', label: 'Forecasting', icon: TrendingUp, matchSegments: 2 },
   { href: '/suppliers', label: 'Suppliers', icon: Truck, matchSegments: 1 },
   { href: '/orders', label: 'Orders', icon: ClipboardList, matchSegments: 1 },
+  { href: '/documents', label: 'Documents', icon: FileText, matchSegments: 1 },
   { href: '/ai-chat', label: 'AI Assistant', icon: MessageCircle, matchSegments: 1 },
   { href: '/settings', label: 'Settings', icon: Settings, matchSegments: 1 },
 ];
@@ -61,5 +63,7 @@ export const MOCK_INVENTORY_DATA = [
 ];
 
 export const MOCK_INVENTORY_JSON_STRING = JSON.stringify(MOCK_INVENTORY_DATA.map(({ status, ...rest }) => rest), null, 2); // For AI Chat, remove dynamic status
+
+    
 
     
