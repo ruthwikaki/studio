@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, BarChartBig, TrendingUp, Info, CalendarClock, BarChartHorizontalBig, Lightbulb, Zap, Layers, Brain, SlidersHorizontal, BarChart, ListFilter, CheckCircle, ShoppingCart, AlertTriangleIcon, Target, Settings2, Cpu, ThumbsUp, ThumbsDown, Maximize2 } from 'lucide-react';
+import { Loader2, BarChartBig, TrendingUp, Info, CalendarClock, BarChartHorizontalBig, Lightbulb, Zap, Layers, Brain, SlidersHorizontal, BarChart, ListFilter, CheckCircle, ShoppingCart, AlertTriangleIcon, Target, Settings2, Cpu, ThumbsUp, ThumbsDown, Maximize2, UploadCloud } from 'lucide-react';
 import { useGenerateDemandForecast } from '@/hooks/useAnalytics';
 import type { ForecastDemandOutput, ModelType } from '@/ai/flows/forecasting';
 import ForecastChart from '@/components/analytics/forecasting/ForecastChart';
@@ -17,7 +17,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from '@/components/ui/separator';
-import { Progress } from '@/components/ui/progress'; // For summary bar
+import { Progress } from '@/components/ui/progress'; 
 import { cn } from '@/lib/utils';
 
 const SAMPLE_HISTORICAL_DATA = JSON.stringify([
@@ -48,7 +48,7 @@ const VISUAL_MODELS: {
 export default function ForecastingPage() {
   const [currentStep, setCurrentStep] = useState('step1');
   const [sku, setSku] = useState('SKU001');
-  const [historicalSalesData, setHistoricalSalesData] = useState(SAMPLE_HISTORICAL_DATA); // To be removed later
+  const [historicalSalesData, setHistoricalSalesData] = useState(SAMPLE_HISTORICAL_DATA); 
   const [seasonalityFactors, setSeasonalityFactors] = useState('Standard retail seasonality, minor bump in Q4 holidays.');
   const [selectedModelType, setSelectedModelType] = useState<ModelType>("AI_PATTERN_RECOGNITION");
   
@@ -61,7 +61,7 @@ export default function ForecastingPage() {
     setForecastResult(null); 
     setScenarioForecastResult(null);
     try {
-      JSON.parse(historicalSalesData); // Basic validation
+      JSON.parse(historicalSalesData); 
     } catch (error) {
       generateForecastMutation.reset(); 
       alert("Historical sales data is not valid JSON."); 
@@ -86,8 +86,8 @@ export default function ForecastingPage() {
     if (!displayForecast) return { next30DaysUnits: "N/A", trend: "N/A", orderDate: "N/A" };
     return {
       next30DaysUnits: displayForecast.predictions['30day'].demand.toLocaleString() || "N/A",
-      trend: "+25%", // Placeholder
-      orderDate: "March 15", // Placeholder
+      trend: "+25%", 
+      orderDate: "March 15", 
     };
   }, [displayForecast]);
 
@@ -128,7 +128,6 @@ export default function ForecastingPage() {
                   Current stock: 120 units. Last forecasted: 2 days ago. (Placeholders)
                 </p>
               </div>
-               {/* TODO: Replace with large searchable dropdown with images */}
             </CardContent>
             <CardFooter className="border-t pt-6 flex justify-end bg-muted/30 rounded-b-lg">
               <Button onClick={() => setCurrentStep('step2')} className="px-6 py-3 text-base">Next: Time & Context &raquo;</Button>
@@ -145,7 +144,6 @@ export default function ForecastingPage() {
               <CardDescription>Define the forecast horizon and relevant market conditions.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Placeholder for visual timeline selector */}
               <div className="p-4 border rounded-md bg-muted/50 text-center">
                 <p className="text-muted-foreground">Visual timeline selector and date range picker (Coming Soon)</p>
                 <div className="flex gap-2 mt-2 justify-center">
@@ -235,7 +233,7 @@ export default function ForecastingPage() {
                 <Skeleton className="h-4 w-1/2 mt-2 rounded-md" />
             </CardHeader>
             <CardContent className="space-y-8 pt-6">
-                <Skeleton className="h-32 w-full rounded-lg" /> {/* Summary placeholder */}
+                <Skeleton className="h-32 w-full rounded-lg" /> 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     <Skeleton className="h-28 w-full rounded-lg" />
                     <Skeleton className="h-28 w-full rounded-lg" />
@@ -270,7 +268,7 @@ export default function ForecastingPage() {
               <div className="text-5xl font-bold text-primary">{summaryMetrics.next30DaysUnits} units</div>
               <p className="text-muted-foreground text-lg">Forecasted for the Next 30 Days</p>
               <div className="w-3/4 mx-auto pt-2">
-                 <Progress value={75} aria-label="75% of forecast period visualizer" className="h-3"/> {/* Placeholder value */}
+                 <Progress value={75} aria-label="75% of forecast period visualizer" className="h-3"/> 
               </div>
               <div className="flex justify-around items-center text-sm text-muted-foreground pt-2">
                 <span>📈 Trend: <span className="font-semibold text-foreground">{summaryMetrics.trend}</span> vs last month</span>
@@ -289,7 +287,7 @@ export default function ForecastingPage() {
                         <CardTitle className="text-lg font-semibold text-accent">Order Now</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <p className="text-3xl font-bold">450 units</p> {/* Placeholder */}
+                        <p className="text-3xl font-bold">450 units</p> 
                         <p className="text-sm text-muted-foreground">To meet 30-day demand.</p>
                     </CardContent>
                     <CardFooter>
@@ -303,7 +301,7 @@ export default function ForecastingPage() {
                         <CardTitle className="text-lg font-semibold">Peak Demand Day</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <p className="text-3xl font-bold">March 22</p> {/* Placeholder */}
+                        <p className="text-3xl font-bold">March 22</p> 
                         <p className="text-sm text-muted-foreground">Prepare staffing & stock.</p>
                     </CardContent>
                      <CardFooter>
@@ -315,7 +313,7 @@ export default function ForecastingPage() {
                         <CardTitle className="text-lg font-semibold text-warning">Risk Alert</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <p className="text-3xl font-bold flex items-center"><AlertTriangleIcon className="h-7 w-7 mr-2 text-warning"/>Low Stock</p> {/* Placeholder */}
+                        <p className="text-3xl font-bold flex items-center"><AlertTriangleIcon className="h-7 w-7 mr-2 text-warning"/>Low Stock</p> 
                         <p className="text-sm text-muted-foreground">Potential stockout: April 5-7.</p>
                     </CardContent>
                      <CardFooter>
@@ -339,7 +337,7 @@ export default function ForecastingPage() {
                         {displayForecast.accuracyScore && ` Illustrative Accuracy: ${displayForecast.accuracyScore.toFixed(0)}%.`}
                     </CardDescription>
                 </CardHeader>
-                <CardContent className="pt-2 h-[450px] relative"> {/* Ensure enough height for chart */}
+                <CardContent className="pt-2 h-[450px] relative"> 
                      <Button variant="ghost" size="icon" className="absolute top-4 right-4 z-10" title="Expand Chart">
                         <Maximize2 className="h-5 w-5" />
                     </Button>
