@@ -12,6 +12,7 @@ import type { InventoryItem } from '@/lib/types';
 import { MOCK_INVENTORY_DATA } from '@/lib/constants'; // Using mock data
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 
 const calculateStockValue = (item: InventoryItem) => item.quantity * item.unitCost;
 
