@@ -1,6 +1,7 @@
 
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { LucideIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface ForecastMetricCardProps {
   title: string;
@@ -12,9 +13,11 @@ interface ForecastMetricCardProps {
 
 export default function ForecastMetricCard({ title, value, description, icon: Icon, className }: ForecastMetricCardProps) {
   return (
-    <Card className={`shadow-md hover:shadow-lg transition-shadow bg-card border ${className}`}>
+    <Card className={cn("shadow-md hover:shadow-lg transition-shadow bg-card border", className)}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium font-body text-muted-foreground">{title}</CardTitle>
+        <CardTitle className="text-sm font-semibold font-body text-foreground"> {/* Updated styling for title */}
+          {title}
+        </CardTitle>
         {Icon && <Icon className="h-4 w-4 text-primary" />}
       </CardHeader>
       <CardContent>
