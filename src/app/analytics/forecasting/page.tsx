@@ -268,7 +268,3 @@ export default function ForecastingPage() {
     </div>
   );
 }
-
-    
-
-    
