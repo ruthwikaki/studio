@@ -1,4 +1,3 @@
-
 // src/app/api/auth/register/route.ts
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
@@ -39,13 +38,13 @@ export async function POST(request: NextRequest) {
 
     // 2. Create Company document in Firestore
     // const companyRef = db.collection('companies').doc(); // Auto-generate ID
-    // const companyData: Omit<CompanyDocument, 'id'> = {
+    // const companyData: Omit<CompanyDocument, 'id' | 'ownerId'> = { // ownerId will be added with MOCK_USER_UID
     //   name: companyName,
     //   plan: 'starter', // Default plan
     //   createdAt: FieldValue.serverTimestamp() as FirebaseFirestore.Timestamp,
-    //   ownerId: userRecord.uid,
+    //   settings: { currency: 'USD', timezone: 'America/New_York' }, // Example default settings
     // };
-    // await companyRef.set(companyData);
+    // await companyRef.set({...companyData, ownerId: userRecord.uid});
     const MOCK_COMPANY_ID = `mock_comp_${Date.now()}`; // Mock
 
     // 3. Create User document in Firestore, linking to the company and setting role
@@ -75,11 +74,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ 
         message: 'User and company registered successfully (mocked).', 
         user: mockUserResponse,
-        company: { id: MOCK_COMPANY_ID, name: companyName, plan: 'starter' }
+        company: { id: MOCK_COMPANY_ID, name: companyName, plan: 'starter', ownerId: MOCK_USER_UID }
     }, { status: 201 });
 
   } catch (error: any) {
     console.error('Registration error:', error);
     // Handle Firebase specific errors, e.g., 'auth/email-already-exists'
     // if (error.code === 'auth/email-already-exists') {
-    //   return NextResponse.json({ error: 'Email already in use.' }, { status: 4
+    //   return NextResponse.json({ error: 'Email already in use.' }, { status: 400 });
+    // }
+    return NextResponse.json({ error: 'Registration failed.', details: error.message }, { status: 500 });
+  }
+}
+
+    

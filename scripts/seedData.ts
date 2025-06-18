@@ -18,7 +18,7 @@ console.log("It does not connect to or modify any database.\n");
 const MOCK_COMPANY_ID = 'comp_supplychainai_seed_001';
 const MOCK_USER_ID_OWNER = 'user_owner_seed_001';
 const MOCK_USER_ID_MANAGER = 'user_manager_seed_001';
-const MOCK_PRODUCT_IDS: Record<string, string> = {};
+const MOCK_PRODUCT_IDS: Record<string, string> = {}; // To store generated product IDs by SKU
 
 // Mock Data Definitions
 const mockCompany: any /* CompanyDocument */ = {
@@ -57,6 +57,7 @@ const mockProducts: any[] /* ProductDocument[] */ = [
   { sku: "TSHIRT001", name: "Organic Cotton T-Shirt", description: "Plain white organic cotton t-shirt.", category: "Apparel", basePrice: 24.99, cost: 8.00, imageUrl: "https://placehold.co/300x300.png?text=TShirt", createdBy: MOCK_USER_ID_MANAGER },
   { sku: "COFFEE001", name: "Premium Coffee Beans 1kg", description: "Whole bean dark roast.", category: "Groceries", basePrice: 19.99, cost: 10.50, imageUrl: "https://placehold.co/300x300.png?text=Coffee", createdBy: MOCK_USER_ID_MANAGER },
   { sku: "BOOK001", name: "Supply Chain Management Basics", description: "Introductory book on SCM.", category: "Books", basePrice: 49.99, cost: 20.00, imageUrl: "https://placehold.co/300x300.png?text=Book", createdBy: MOCK_USER_ID_MANAGER },
+  // ... Add up to 100+ items for thorough testing
 ].map((p, index) => {
   const id = `prod_seed_${String(index + 1).padStart(3, '0')}`;
   MOCK_PRODUCT_IDS[p.sku] = id; // Store mapping for later use
@@ -71,13 +72,14 @@ const mockProducts: any[] /* ProductDocument[] */ = [
 
 
 const mockInventoryStock: any[] /* InventoryStockDocument[] */ = [
-  { productId: MOCK_PRODUCT_IDS["LAPTOP001"], sku: "LAPTOP001", quantity: 5, reorderPoint: 10, reorderQuantity: 5, location: "WH-A1", lowStockAlertSent: true },
-  { productId: MOCK_PRODUCT_IDS["MOUSE002"], sku: "MOUSE002", quantity: 50, reorderPoint: 20, reorderQuantity: 25, location: "WH-A2", lowStockAlertSent: false },
-  { productId: MOCK_PRODUCT_IDS["KEYB003"], sku: "KEYB003", quantity: 2, reorderPoint: 5, reorderQuantity: 5, location: "WH-B1", lowStockAlertSent: true },
-  { productId: MOCK_PRODUCT_IDS["MONITOR01"], sku: "MONITOR01", quantity: 0, reorderPoint: 3, reorderQuantity: 3, location: "WH-C1", lowStockAlertSent: true },
-  { productId: MOCK_PRODUCT_IDS["TSHIRT001"], sku: "TSHIRT001", quantity: 150, reorderPoint: 50, reorderQuantity: 75, location: "WH-D1", lowStockAlertSent: false },
-  { productId: MOCK_PRODUCT_IDS["COFFEE001"], sku: "COFFEE001", quantity: 75, reorderPoint: 30, reorderQuantity: 50, location: "WH-E1", lowStockAlertSent: false },
-  { productId: MOCK_PRODUCT_IDS["BOOK001"], sku: "BOOK001", quantity: 20, reorderPoint: 10, reorderQuantity: 10, location: "WH-F1", lowStockAlertSent: false },
+  { productId: MOCK_PRODUCT_IDS["LAPTOP001"], sku: "LAPTOP001", name: "15in Pro Laptop", quantity: 5, unitCost: 850.00, reorderPoint: 10, reorderQuantity: 5, location: "WH-A1", lowStockAlertSent: true, category: "Electronics", imageUrl: "https://placehold.co/300x300.png?text=Laptop" },
+  { productId: MOCK_PRODUCT_IDS["MOUSE002"], sku: "MOUSE002", name: "Wireless Ergonomic Mouse", quantity: 50, unitCost: 15.50, reorderPoint: 20, reorderQuantity: 25, location: "WH-A2", lowStockAlertSent: false, category: "Electronics", imageUrl: "https://placehold.co/300x300.png?text=Mouse" },
+  { productId: MOCK_PRODUCT_IDS["KEYB003"], sku: "KEYB003", name: "Mechanical Keyboard", quantity: 2, unitCost: 42.00, reorderPoint: 5, reorderQuantity: 5, location: "WH-B1", lowStockAlertSent: true, category: "Electronics", imageUrl: "https://placehold.co/300x300.png?text=Keyboard" },
+  { productId: MOCK_PRODUCT_IDS["MONITOR01"], sku: "MONITOR01", name: "27in 4K Monitor", quantity: 0, unitCost: 220.00, reorderPoint: 3, reorderQuantity: 3, location: "WH-C1", lowStockAlertSent: true, category: "Electronics", imageUrl: "https://placehold.co/300x300.png?text=Monitor" },
+  { productId: MOCK_PRODUCT_IDS["TSHIRT001"], sku: "TSHIRT001", name: "Organic Cotton T-Shirt", quantity: 150, unitCost: 8.00, reorderPoint: 50, reorderQuantity: 75, location: "WH-D1", lowStockAlertSent: false, category: "Apparel", imageUrl: "https://placehold.co/300x300.png?text=TShirt" },
+  { productId: MOCK_PRODUCT_IDS["COFFEE001"], sku: "COFFEE001", name: "Premium Coffee Beans 1kg", quantity: 75, unitCost: 10.50, reorderPoint: 30, reorderQuantity: 50, location: "WH-E1", lowStockAlertSent: false, category: "Groceries", imageUrl: "https://placehold.co/300x300.png?text=Coffee" },
+  { productId: MOCK_PRODUCT_IDS["BOOK001"], sku: "BOOK001", name: "Supply Chain Management Basics", quantity: 20, unitCost: 20.00, reorderPoint: 10, reorderQuantity: 10, location: "WH-F1", lowStockAlertSent: false, category: "Books", imageUrl: "https://placehold.co/300x300.png?text=Book" },
+  // ... ensure some items are below reorder point
 ].map((inv, index) => ({
   id: `inv_stock_seed_${String(index + 1).padStart(3, '0')}`,
   companyId: MOCK_COMPANY_ID,
@@ -96,11 +98,12 @@ const mockSuppliers: any[] /* SupplierDocument[] */ = [
     leadTimeDays: 14,
     reliabilityScore: 92,
     paymentTerms: 'Net 30',
-    productsSupplied: [
+    productsSupplied: [ // Using SupplierProductInfo structure
       { productId: MOCK_PRODUCT_IDS["LAPTOP001"], sku: 'LAPTOP001', name: '15in Pro Laptop', lastPrice: 840.00, moqForItem: 5 },
       { productId: MOCK_PRODUCT_IDS["MONITOR01"], sku: 'MONITOR01', name: '27in 4K Monitor', lastPrice: 210.00, moqForItem: 3 },
     ],
     createdBy: MOCK_USER_ID_MANAGER,
+    logoUrl: 'https://placehold.co/60x60.png?text=EL'
   },
   {
     id: 'sup_seed_gen_002',
@@ -117,6 +120,7 @@ const mockSuppliers: any[] /* SupplierDocument[] */ = [
       { productId: MOCK_PRODUCT_IDS["TSHIRT001"], sku: 'TSHIRT001', name: 'Organic Cotton T-Shirt', lastPrice: 7.50, moqForItem: 100 },
     ],
     createdBy: MOCK_USER_ID_MANAGER,
+    logoUrl: 'https://placehold.co/60x60.png?text=GG'
   },
 ].map(s => ({
   ...s,
@@ -171,6 +175,7 @@ const mockSalesHistory: any[] /* SalesHistoryDocument[] */ = [
   { productId: MOCK_PRODUCT_IDS["LAPTOP001"], sku: "LAPTOP001", date: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000), quantity: 1, unitPrice: 1299.99, revenue: 1299.99, channel: 'Direct Sale' },
   { productId: MOCK_PRODUCT_IDS["TSHIRT001"], sku: "TSHIRT001", date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), quantity: 10, unitPrice: 24.99, revenue: 249.90, channel: 'Retail POS' },
   { productId: MOCK_PRODUCT_IDS["TSHIRT001"], sku: "TSHIRT001", date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), quantity: 5, unitPrice: 24.99, revenue: 124.95, channel: 'Online Store' },
+  // Add more historical sales data for robust forecasting tests
 ].map((s, index) => ({
   id: `sh_seed_${String(index + 1).padStart(3, '0')}`,
   companyId: MOCK_COMPANY_ID,
@@ -219,7 +224,7 @@ const mockDocuments: any[] /* DocumentMetadata[] */ = [
     fileSize: 123456,
     fileUrl: 'gs://your-bucket-name/documents/invoice_electroparts_2024_03.pdf', // Placeholder
     status: 'processed',
-    documentTypeHint: 'invoice',
+    documentTypeHint: 'invoice', // Changed 'type' to 'documentTypeHint'
     extractedData: { documentType: "invoice", invoiceNumber: "INV-EP-789", totalAmount: 9525.00, vendorName: "ElectroParts Ltd." },
     linkedOrderId: mockOrders[0].id, // Link to the PO
     uploadedAt: new Date(Date.now() - 19 * 24 * 60 * 60 * 1000),
@@ -351,3 +356,5 @@ async function seedDatabase() {
 
 // To actually run, you would call seedDatabase() here.
 // seedDatabase();
+
+    

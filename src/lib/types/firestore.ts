@@ -82,13 +82,17 @@ export interface InventoryStockDocument {
   companyId: string;
   productId: string; // Reference to ProductDocument.id
   sku: string; // Denormalized from ProductDocument for easier querying
+  name: string; // Denormalized product name
   quantity: number;
+  unitCost: number; // Denormalized from product for valuation, or could be specific to batch
   reorderPoint: number;
   reorderQuantity?: number;
   location?: string; // e.g., Warehouse ID, shelf number
   lowStockAlertSent?: boolean; // Tracks if a low stock alert has been sent
   lastUpdated: Timestamp;
   notes?: string;
+  category?: string; // Denormalized from ProductDocument
+  imageUrl?: string; // Denormalized from ProductDocument
 }
 
 // --------------------
@@ -128,11 +132,16 @@ export interface SupplierDocument {
   reliabilityScore?: number; // e.g., 0-100
   paymentTerms?: string;
   moq?: number; // General Minimum Order Quantity for this supplier
-  productsSupplied?: SupplierProductInfo[];
+  productsSupplied?: SupplierProductInfo[]; // Changed from array of strings to array of objects
   notes?: string;
   createdAt: Timestamp;
   lastUpdated: Timestamp;
   createdBy?: string; // UID of user
+  logoUrl?: string;
+  lastOrderDate?: Timestamp;
+  totalSpend?: number;
+  onTimeDeliveryRate?: number; // 0.0 to 1.0
+  qualityRating?: number; // e.g. 1-5
 }
 
 // --------------------
@@ -150,6 +159,8 @@ export interface OrderItem {
 export type OrderStatus =
   | 'pending_approval' // For POs needing approval
   | 'pending_payment' // For sales orders awaiting payment
+  | 'pending' // Generic pending state for POs
+  | 'processing'
   | 'pending_fulfillment' // Sales order paid, ready to be picked/packed
   | 'awaiting_shipment' // PO placed, supplier to ship; or Sales order packed, ready for carrier
   | 'awaiting_delivery' // PO shipped by supplier; or Sales order shipped to customer
@@ -266,7 +277,7 @@ export interface DocumentMetadata {
   fileSize: number; // in bytes
   fileUrl: string; // Cloud Storage URL
   status: 'uploading' | 'pending_ocr' | 'ocr_complete' | 'processing_extraction' | 'extraction_complete' | 'pending_review' | 'processed' | 'error' | 'archived';
-  documentTypeHint?: 'invoice' | 'purchase_order' | 'receipt' | 'auto_detect' | 'unknown';
+  documentTypeHint?: 'invoice' | 'purchase_order' | 'receipt' | 'auto_detect' | 'unknown'; // Changed 'type' to 'documentTypeHint'
   extractedData?: ExtractedDocumentData;
   linkedOrderId?: string; // Optional link to an order in the 'orders' collection
   notes?: string;
@@ -302,3 +313,5 @@ export interface ChatSessionDocument {
   title?: string; // User-editable or AI-generated title for the session
   tags?: string[];
 }
+
+    
