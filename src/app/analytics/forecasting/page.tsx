@@ -25,7 +25,19 @@ const SAMPLE_HISTORICAL_DATA = JSON.stringify([
   {"date": "2023-01-08", "quantitySold": 12},
   {"date": "2023-01-15", "quantitySold": 15},
   {"date": "2023-01-22", "quantitySold": 13},
-  // ... (rest of sample data remains the same, truncated for brevity)
+  {"date": "2023-01-29", "quantitySold": 18},
+  {"date": "2023-02-05", "quantitySold": 20},
+  {"date": "2023-02-12", "quantitySold": 22},
+  {"date": "2023-02-19", "quantitySold": 19},
+  {"date": "2023-02-26", "quantitySold": 25},
+  {"date": "2023-03-05", "quantitySold": 28},
+  {"date": "2023-03-12", "quantitySold": 30},
+  {"date": "2023-03-19", "quantitySold": 27},
+  {"date": "2023-03-26", "quantitySold": 33},
+  {"date": "2023-04-02", "quantitySold": 35},
+  {"date": "2023-04-09", "quantitySold": 38},
+  {"date": "2023-04-16", "quantitySold": 36},
+  {"date": "2023-04-23", "quantitySold": 32},
   {"date": "2023-04-30", "quantitySold": 40}
 ], null, 2);
 
@@ -55,9 +67,9 @@ export default function ForecastingPage() {
     setForecastResult(null); 
     setScenarioForecastResult(null);
     try {
-      JSON.parse(historicalSalesData);
+      JSON.parse(historicalSalesData); // Basic validation
     } catch (error) {
-      generateForecastMutation.reset();
+      generateForecastMutation.reset(); // Clear any previous error state from mutation hook
       alert("Historical sales data is not valid JSON."); 
       return;
     }
@@ -354,3 +366,5 @@ MODEL COMPARISON for ${forecastResult.sku}
     </div>
   );
 }
+
+    

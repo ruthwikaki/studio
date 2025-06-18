@@ -250,3 +250,5 @@ export default function ForecastChart({ historicalData, baselinePredictions, sce
     </Card>
   );
 }
+
+    
