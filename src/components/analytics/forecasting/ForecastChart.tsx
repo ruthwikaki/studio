@@ -2,14 +2,15 @@
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
+import { ChartContainer, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import type { ForecastDemandOutput } from '@/ai/flows/forecasting';
 import Image from "next/image";
 
 interface ForecastChartProps {
   historicalData: { date: string; quantitySold: number }[];
-  predictions: ForecastDemandOutput['predictions'];
+  baselinePredictions: ForecastDemandOutput['predictions'] | null;
+  scenarioPredictions?: ForecastDemandOutput['predictions'] | null;
 }
 
 const getFutureDate = (baseDate: Date, daysToAdd: number): string => {
@@ -19,8 +20,8 @@ const getFutureDate = (baseDate: Date, daysToAdd: number): string => {
 };
 
 
-export default function ForecastChart({ historicalData, predictions }: ForecastChartProps) {
-  if (!historicalData || historicalData.length === 0 || !predictions) {
+export default function ForecastChart({ historicalData, baselinePredictions, scenarioPredictions }: ForecastChartProps) {
+  if (!historicalData || historicalData.length === 0 || !baselinePredictions) {
     return (
         <div className="h-[350px] w-full flex items-center justify-center bg-muted/30 rounded-lg border">
              <Image 
@@ -40,12 +41,16 @@ export default function ForecastChart({ historicalData, predictions }: ForecastC
       label: "Historical Sales",
       color: "hsl(var(--primary))", // Blue
     },
-    predicted: {
-      label: "Predicted Demand",
-      color: "hsl(var(--success))", // Green (using success color from theme)
+    baseline: {
+      label: "Baseline Forecast",
+      color: "hsl(var(--success))", // Green
     },
-    confidenceUpper: { label: "Upper Confidence", color: "hsla(var(--primary), 0.1)" }, // Light blue for confidence
-    confidenceLower: { label: "Lower Confidence", color: "hsla(var(--primary), 0.1)" }, // Light blue for confidence
+    scenario: {
+        label: "Scenario Forecast",
+        color: "hsl(var(--warning))", // Orange/Yellow for scenario
+    },
+    confidenceUpper: { label: "Upper Confidence", color: "hsla(var(--primary), 0.1)" }, 
+    confidenceLower: { label: "Lower Confidence", color: "hsla(var(--primary), 0.1)" }, 
   };
   
   const lastHistoricalEntry = historicalData.length > 0 ? historicalData[historicalData.length - 1] : { date: new Date().toISOString().split('T')[0], quantitySold: 0 };
@@ -57,25 +62,41 @@ export default function ForecastChart({ historicalData, predictions }: ForecastC
     timestamp: new Date(item.date).getTime(),
   }));
 
-  const predictionPoints = [
-    { dateLabel: 'Next 30 Days', date: getFutureDate(lastHistoricalDateObj, 30), predicted: predictions['30day'].demand, confidence: predictions['30day'].confidence },
-    { dateLabel: 'Next 60 Days', date: getFutureDate(lastHistoricalDateObj, 60), predicted: predictions['60day'].demand, confidence: predictions['60day'].confidence },
-    { dateLabel: 'Next 90 Days', date: getFutureDate(lastHistoricalDateObj, 90), predicted: predictions['90day'].demand, confidence: predictions['90day'].confidence },
-  ].map(p => ({ ...p, timestamp: new Date(p.date).getTime() }));
+  const createPredictionPoints = (predictions: ForecastDemandOutput['predictions'] | null, keyPrefix: string) => {
+    if (!predictions) return [];
+    return [
+      { dateLabel: 'Next 30 Days', date: getFutureDate(lastHistoricalDateObj, 30), value: predictions['30day'].demand, confidence: predictions['30day'].confidence },
+      { dateLabel: 'Next 60 Days', date: getFutureDate(lastHistoricalDateObj, 60), value: predictions['60day'].demand, confidence: predictions['60day'].confidence },
+      { dateLabel: 'Next 90 Days', date: getFutureDate(lastHistoricalDateObj, 90), value: predictions['90day'].demand, confidence: predictions['90day'].confidence },
+    ].map(p => ({ date: p.date, [`${keyPrefix}`]: p.value, confidence: p.confidence, timestamp: new Date(p.date).getTime() }));
+  };
+  
+  const baselinePredictionPoints = createPredictionPoints(baselinePredictions, 'baseline');
+  const scenarioPredictionPoints = createPredictionPoints(scenarioPredictions, 'scenario');
 
-  // Create a bridge point for a continuous line if there's historical data
-   const bridgePoint = formattedHistoricalData.length > 0 && predictionPoints.length > 0 ? {
-    date: predictionPoints[0].date, 
-    historical: formattedHistoricalData[formattedHistoricalData.length - 1].historical,
-    timestamp: new Date(predictionPoints[0].date).getTime() -1, 
+  const bridgePointHistoricalToBaseline = formattedHistoricalData.length > 0 && baselinePredictionPoints.length > 0 ? {
+    date: baselinePredictionPoints[0].date, 
+    historical: formattedHistoricalData[formattedHistoricalData.length - 1].historical, // Use last historical value
+    timestamp: new Date(baselinePredictionPoints[0].date).getTime() -1, // Ensure it's just before the first prediction
   } : null;
 
+  // Combine all data points and sort by date (timestamp)
+  let combinedData = [...formattedHistoricalData];
+  if (bridgePointHistoricalToBaseline) combinedData.push(bridgePointHistoricalToBaseline);
+  
+  // Merge baseline and scenario points by date
+  const allPredictionPoints = new Map<string, any>();
 
-  const combinedData = [
-    ...formattedHistoricalData,
-    ...(bridgePoint ? [bridgePoint] : []), 
-    ...predictionPoints.map(p => ({ date: p.date, predicted: p.predicted, confidence: p.confidence, timestamp: p.timestamp }))
-  ].sort((a,b) => a.timestamp - b.timestamp);
+  baselinePredictionPoints.forEach(p => {
+    allPredictionPoints.set(p.date, { ...allPredictionPoints.get(p.date), ...p });
+  });
+  scenarioPredictionPoints.forEach(p => {
+    allPredictionPoints.set(p.date, { ...allPredictionPoints.get(p.date), ...p });
+  });
+
+  combinedData = [...combinedData, ...Array.from(allPredictionPoints.values())]
+    .sort((a, b) => a.timestamp - b.timestamp)
+    .filter((item, index, self) => index === self.findIndex((t) => t.date === item.date && t.historical === item.historical && t.baseline === item.baseline && t.scenario === item.scenario)); // Remove duplicates if any
 
 
   return (
@@ -105,10 +126,15 @@ export default function ForecastChart({ historicalData, predictions }: ForecastC
                     itemStyle={{ color: "hsl(var(--foreground))" }}
                     formatter={(value: number, name: string, props: any) => {
                         const formattedValue = typeof value === 'number' ? value.toLocaleString() : value;
-                        if (name === 'predicted' && props.payload.confidence) {
-                            return [`${formattedValue} (Confidence: ${props.payload.confidence})`, chartConfig.predicted.label];
+                        let label = name;
+                        if (name === 'historical') label = chartConfig.historical.label as string;
+                        if (name === 'baseline') label = chartConfig.baseline.label as string;
+                        if (name === 'scenario') label = chartConfig.scenario.label as string;
+                        
+                        if ((name === 'baseline' || name === 'scenario') && props.payload.confidence) {
+                            return [`${formattedValue} (Confidence: ${props.payload.confidence})`, label];
                         }
-                        return [formattedValue, name === 'historical' ? chartConfig.historical.label : chartConfig.predicted.label];
+                        return [formattedValue, label];
                     }}
                  />
                 <ChartLegend content={<ChartLegendContent />} wrapperStyle={{paddingTop: "10px"}} />
@@ -120,43 +146,32 @@ export default function ForecastChart({ historicalData, predictions }: ForecastC
                     dot={{ r: 3, fill: chartConfig.historical.color }} 
                     activeDot={{ r: 5 }}
                     name={chartConfig.historical.label as string}
+                    connectNulls={true}
                 />
                 <Line 
                     type="monotone" 
-                    dataKey="predicted" 
-                    stroke={chartConfig.predicted.color} 
-                    strokeDasharray="5 5" // Dashed line for predictions
+                    dataKey="baseline" 
+                    stroke={chartConfig.baseline.color} 
+                    strokeDasharray="5 5" 
                     strokeWidth={2} 
-                    dot={{ r: 3, fill: chartConfig.predicted.color }} 
+                    dot={{ r: 3, fill: chartConfig.baseline.color }} 
                     activeDot={{ r: 5 }}
-                    name={chartConfig.predicted.label as string}
+                    name={chartConfig.baseline.label as string}
+                    connectNulls={true}
                 />
-                 {/* 
-                 Illustrative confidence interval - requires actual min/max data from API for real shading.
-                 If you had `predictedMin` and `predictedMax` in your data:
-                 <Area 
-                    type="monotone" 
-                    dataKey="predictedMax" 
-                    stackId="confidence" 
-                    stroke="transparent" 
-                    fill={chartConfig.confidenceUpper.color}
-                    name={chartConfig.confidenceUpper.label as string} 
-                 />
-                 <Area 
-                    type="monotone" 
-                    dataKey="predictedMin" 
-                    stackId="confidence"  // Use same stackId if you want it to "fill up" from min to max
-                    stroke="transparent" 
-                    fill={chartConfig.confidenceLower.color} // This might be better as the same color with opacity
-                    name={chartConfig.confidenceLower.label as string}
-                  />
-                  Or for a single shaded area based on a +- range around 'predicted':
-                  const dataWithConfidence = combinedData.map(d => ({
-                    ...d,
-                    confidenceRange: d.predicted ? [d.predicted - (d.predicted * 0.1), d.predicted + (d.predicted * 0.1)] : undefined
-                  }));
-                  <Line type="monotone" dataKey="confidenceRange" stroke="transparent" activeDot={false} name="Confidence Interval" />
-                 */}
+                {scenarioPredictions && (
+                     <Line 
+                        type="monotone" 
+                        dataKey="scenario" 
+                        stroke={chartConfig.scenario.color} 
+                        strokeDasharray="2 2" // Different dash for scenario
+                        strokeWidth={2} 
+                        dot={{ r: 3, fill: chartConfig.scenario.color }} 
+                        activeDot={{ r: 5 }}
+                        name={chartConfig.scenario.label as string}
+                        connectNulls={true}
+                    />
+                )}
             </LineChart>
             </ResponsiveContainer>
         </ChartContainer>

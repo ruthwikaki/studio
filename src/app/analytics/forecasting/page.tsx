@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, BarChartBig, TrendingUp, Info, CalendarClock, BarChartHorizontalBig, Lightbulb, Zap } from 'lucide-react';
+import { Loader2, BarChartBig, TrendingUp, Info, CalendarClock, BarChartHorizontalBig, Lightbulb, Zap, Layers } from 'lucide-react';
 import { useGenerateDemandForecast } from '@/hooks/useAnalytics';
 import type { ForecastDemandOutput } from '@/ai/flows/forecasting';
 import ForecastChart from '@/components/analytics/forecasting/ForecastChart';
@@ -19,7 +19,6 @@ import Link from 'next/link';
 import ConfidenceIndicator from '@/components/analytics/forecasting/ConfidenceIndicator';
 import { Separator } from '@/components/ui/separator';
 
-// Sample historical data for placeholder
 const SAMPLE_HISTORICAL_DATA = JSON.stringify([
   {"date": "2023-01-01", "quantitySold": 10},
   {"date": "2023-01-08", "quantitySold": 12},
@@ -49,15 +48,17 @@ export default function ForecastingPage() {
   
   const generateForecastMutation = useGenerateDemandForecast();
   const [forecastResult, setForecastResult] = useState<ForecastDemandOutput | null>(null);
+  const [scenarioForecastResult, setScenarioForecastResult] = useState<ForecastDemandOutput | null>(null);
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setForecastResult(null); 
+    setScenarioForecastResult(null);
     try {
       JSON.parse(historicalSalesData);
     } catch (error) {
       generateForecastMutation.reset();
-      // Consider using toast for this error
       alert("Historical sales data is not valid JSON."); 
       return;
     }
@@ -74,17 +75,19 @@ export default function ForecastingPage() {
   
   const isLoading = generateForecastMutation.isPending;
 
-  const getAverageDemand = (period: '30day' | '60day' | '90day') => {
-    if (!forecastResult) return "N/A";
-    const demand = forecastResult.predictions[period].demand;
+  const getAverageDemand = (period: '30day' | '60day' | '90day', sourceForecast: ForecastDemandOutput | null) => {
+    if (!sourceForecast) return "N/A";
+    const demand = sourceForecast.predictions[period].demand;
     const days = parseInt(period.replace('day', ''));
     return (demand / days).toFixed(1);
   };
 
-  const getTotalPredictedUnits = (period: '30day' | '60day' | '90day') => {
-    if (!forecastResult) return "N/A";
-    return forecastResult.predictions[period].demand.toLocaleString();
+  const getTotalPredictedUnits = (period: '30day' | '60day' | '90day', sourceForecast: ForecastDemandOutput | null) => {
+    if (!sourceForecast) return "N/A";
+    return sourceForecast.predictions[period].demand.toLocaleString();
   }
+
+  const displayForecast = scenarioForecastResult || forecastResult;
 
   return (
     <div className="flex flex-col gap-8 py-6">
@@ -193,10 +196,13 @@ export default function ForecastingPage() {
           </Alert>
       )}
 
-      {forecastResult && !isLoading && (
+      {displayForecast && !isLoading && (
         <Card className="shadow-xl border-border">
           <CardHeader className="pb-4">
-            <CardTitle className="font-headline text-2xl text-foreground">Forecast Results for SKU: <span className="text-primary">{forecastResult.sku}</span></CardTitle>
+            <CardTitle className="font-headline text-2xl text-foreground">
+              Forecast Results for SKU: <span className="text-primary">{displayForecast.sku}</span>
+              {scenarioForecastResult && <span className="text-orange-500 font-normal text-xl ml-2">(Scenario Applied)</span>}
+            </CardTitle>
             <CardDescription className="text-base">Predictions and insights based on the data provided.</CardDescription>
           </CardHeader>
           <Separator />
@@ -208,11 +214,11 @@ export default function ForecastingPage() {
                 Key Metrics
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                <ForecastMetricCard title="30-Day Forecast" value={getTotalPredictedUnits('30day')} description={<ConfidenceIndicator level={forecastResult.predictions['30day'].confidence} />} />
-                <ForecastMetricCard title="60-Day Forecast" value={getTotalPredictedUnits('60day')} description={<ConfidenceIndicator level={forecastResult.predictions['60day'].confidence} />} />
-                <ForecastMetricCard title="90-Day Forecast" value={getTotalPredictedUnits('90day')} description={<ConfidenceIndicator level={forecastResult.predictions['90day'].confidence} />} />
-                <ForecastMetricCard title="Avg. Daily Demand (30d)" value={getAverageDemand('30day')} description="Approximate daily average" />
-                <ForecastMetricCard title="Total Predicted (90d)" value={getTotalPredictedUnits('90day')} description="Total units for next 90 days" />
+                <ForecastMetricCard title="30-Day Forecast" value={getTotalPredictedUnits('30day', displayForecast)} description={<ConfidenceIndicator level={displayForecast.predictions['30day'].confidence} />} />
+                <ForecastMetricCard title="60-Day Forecast" value={getTotalPredictedUnits('60day', displayForecast)} description={<ConfidenceIndicator level={displayForecast.predictions['60day'].confidence} />} />
+                <ForecastMetricCard title="90-Day Forecast" value={getTotalPredictedUnits('90day', displayForecast)} description={<ConfidenceIndicator level={displayForecast.predictions['90day'].confidence} />} />
+                <ForecastMetricCard title="Avg. Daily Demand (30d)" value={getAverageDemand('30day', displayForecast)} description="Approximate daily average" />
+                <ForecastMetricCard title="Total Predicted (90d)" value={getTotalPredictedUnits('90day', displayForecast)} description="Total units for next 90 days" />
                 <ForecastMetricCard title="Peak Demand Period" value={"N/A"} description="Analysis pending" />
               </div>
             </section>
@@ -224,17 +230,21 @@ export default function ForecastingPage() {
                 <TrendingUp className="h-6 w-6 mr-2 text-primary" />
                 Demand Projection Chart
                 </h3>
-              <ForecastChart historicalData={JSON.parse(historicalSalesData)} predictions={forecastResult.predictions} />
+              <ForecastChart 
+                historicalData={JSON.parse(historicalSalesData)} 
+                baselinePredictions={forecastResult?.predictions ?? null}
+                scenarioPredictions={scenarioForecastResult?.predictions ?? null}
+              />
             </section>
             
-            {forecastResult.predictions['30day'].explanation && (
+            {displayForecast.predictions['30day'].explanation && (
               <>
                 <Separator />
                 <section>
                     <Alert className="bg-blue-50 border-blue-300 dark:bg-blue-900/30 dark:border-blue-700/50 shadow">
                         <Lightbulb className="h-5 w-5 text-primary" />
                         <AlertTitle className="font-semibold text-primary text-lg">AI Explanation (30-day Forecast)</AlertTitle>
-                        <AlertDescription className="text-blue-700 dark:text-blue-300 text-base mt-1">{forecastResult.predictions['30day'].explanation}</AlertDescription>
+                        <AlertDescription className="text-blue-700 dark:text-blue-300 text-base mt-1">{displayForecast.predictions['30day'].explanation}</AlertDescription>
                     </Alert>
                 </section>
                </>
@@ -256,15 +266,10 @@ export default function ForecastingPage() {
         </Card>
       )}
 
-      <Card className="shadow-lg border-border mt-4">
-        <CardHeader>
-          <CardTitle className="font-headline text-2xl text-foreground">Scenario Analysis (What-If Simulator)</CardTitle>
-          <CardDescription className="text-base">Explore how different factors might impact your forecast. (Feature in development)</CardDescription>
-        </CardHeader>
-        <CardContent className="pt-2">
-          <ScenarioSimulator />
-        </CardContent>
-      </Card>
+      <ScenarioSimulator 
+        baselineForecast={forecastResult} 
+        onApplyScenario={setScenarioForecastResult} 
+      />
     </div>
   );
 }
