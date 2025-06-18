@@ -38,7 +38,7 @@ export function useRealtimeUpdates() {
     // });
 
     // return () => unsubscribe();
-    console.log("Placeholder: Realtime updates hook mounted/user changed.");
+    // console.log("Placeholder: Realtime updates hook mounted/user changed.");
   }, [/* user, toast */]);
 
   // This hook could return data or manage state updates via React Query's queryClient.setQueryData

@@ -42,7 +42,7 @@ export async function quickUpdateQuantity(sku: string, newQuantity: number): Pro
     //   lastUpdated: FieldValue.serverTimestamp(),
     // });
 
-    console.log(`Mock update: SKU ${sku} quantity to ${newQuantity} for user ${userId}`);
+    // console.log(`Mock update: SKU ${sku} quantity to ${newQuantity} for user ${userId}`);
     revalidatePath('/inventory'); // Revalidate inventory page
     return { success: true };
   } catch (e: any) {
@@ -69,8 +69,8 @@ export async function bulkUpdateItems(updates: { sku: string; data: Partial<Omit
     // }
     // await batch.commit();
 
-    console.log(`Mock bulk update for ${updates.length} items for user ${userId}`);
-    updates.forEach(u => console.log(`  SKU ${u.sku} data: ${JSON.stringify(u.data)}`));
+    // console.log(`Mock bulk update for ${updates.length} items for user ${userId}`);
+    // updates.forEach(u => console.log(`  SKU ${u.sku} data: ${JSON.stringify(u.data)}`));
     revalidatePath('/inventory');
     return { success: true };
   } catch (e: any) {
@@ -96,7 +96,7 @@ export async function deleteItems(skus: string[]): Promise<ActionResult> {
     // }
     // await batch.commit();
     
-    console.log(`Mock delete for SKUs: ${skus.join(', ')} for user ${userId}`);
+    // console.log(`Mock delete for SKUs: ${skus.join(', ')} for user ${userId}`);
     revalidatePath('/inventory');
     return { success: true };
   } catch (e: any) {

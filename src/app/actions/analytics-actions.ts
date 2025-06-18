@@ -66,7 +66,7 @@ export async function generateDailyReport(): Promise<ActionResult<AnalyticsDocum
 
     // 4. Store the report in Firestore
     // await db.collection('analytics').doc(reportId).set(reportData);
-    console.log(`Mock daily report generated for user ${userId}:`, reportData);
+    // console.log(`Mock daily report generated for user ${userId}:`, reportData);
 
     revalidatePath('/analytics'); // Revalidate analytics page if it shows daily reports
     return { success: true, data: { id: reportId, ...reportData } };
@@ -102,7 +102,7 @@ export async function exportInventoryData(format: 'csv' | 'json'): Promise<Actio
       contentType = 'text/csv';
     }
     
-    console.log(`Mock export for user ${userId} in ${format} format.`);
+    // console.log(`Mock export for user ${userId} in ${format} format.`);
     // In a real app, the client would use this data to trigger a download.
     // Server actions cannot directly trigger downloads.
     return { success: true, data: { content, contentType, fileName } };
