@@ -3,17 +3,26 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 // import { getFirestoreAdmin } from 'firebase-admin/firestore'; // Placeholder
 // import { verifyAuthToken } from '@/lib/firebase/admin-auth'; // Placeholder
-import { forecastDemand, ForecastDemandInput, ForecastDemandOutput } from '@/ai/flows/forecasting';
+import { forecastDemand, ForecastDemandInput, ForecastDemandOutput, ModelType } from '@/ai/flows/forecasting';
 import { z } from 'zod';
 
 // Placeholder for Firestore instance
 // const db = getFirestoreAdmin();
 
+const ModelTypeApiSchema = z.enum([
+  "SIMPLE_MOVING_AVERAGE",
+  "EXPONENTIAL_SMOOTHING",
+  "SEASONAL_DECOMPOSITION",
+  "AI_PATTERN_RECOGNITION",
+  "REGRESSION_ANALYSIS",
+  "ENSEMBLE_COMBINED"
+]);
+
 const ForecastRequestSchema = z.object({
   sku: z.string().min(1),
-  // dateRange: z.object({ from: z.string().date(), to: z.string().date() }), // For fetching historical sales
-  historicalSalesData: z.string().min(10).describe('JSON string of historical sales data.'), // Simplified for now
+  historicalSalesData: z.string().min(10).describe('JSON string of historical sales data.'),
   seasonalityFactors: z.string().optional(),
+  modelType: ModelTypeApiSchema.default("AI_PATTERN_RECOGNITION"),
 });
 
 export async function POST(request: NextRequest) {
@@ -32,26 +41,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid request data.', details: validationResult.error.format() }, { status: 400 });
     }
 
-    const { sku, historicalSalesData, seasonalityFactors } = validationResult.data;
-
-    // TODO: In a real scenario, fetch historical sales data for the SKU from Firestore
-    // This would involve querying an 'orders' or 'sales_history' collection.
-    // For now, historicalSalesData is passed directly in the request body.
-    // Example:
-    // const salesSnapshot = await db.collection('salesHistory')
-    //   .where('userId', '==', userId)
-    //   .where('sku', '==', sku)
-    //   .where('date', '>=', new Date(dateRange.from))
-    //   .where('date', '<=', new Date(dateRange.to))
-    //   .orderBy('date', 'asc')
-    //   .get();
-    // const historicalData = salesSnapshot.docs.map(doc => doc.data());
-    // const historicalSalesDataJson = JSON.stringify(historicalData);
+    const { sku, historicalSalesData, seasonalityFactors, modelType } = validationResult.data;
 
     const forecastInput: ForecastDemandInput = {
       sku,
-      historicalSalesData: historicalSalesData, // Using the direct input for now
+      historicalSalesData: historicalSalesData,
       seasonalityFactors,
+      modelType: modelType as ModelType, // Cast as ModelType from flow
     };
 
     const predictions: ForecastDemandOutput = await forecastDemand(forecastInput);
