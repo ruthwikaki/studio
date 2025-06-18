@@ -28,7 +28,11 @@ import {
   CheckCircle2,
   AlertTriangle,
   XCircle,
-  PlusCircle
+  PlusCircle,
+  UploadCloud,
+  BarChartHorizontalBig,
+  ShoppingCart,
+  Zap
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -93,6 +97,12 @@ export default function ProfessionalForecastingPage() {
   };
   
   const numSelected = Object.values(selectedProducts).filter(Boolean).length;
+
+  const getSelectAllCheckedState = (): boolean | 'indeterminate' => {
+    if (numSelected === 0) return false;
+    if (numSelected === mockProducts.length) return true;
+    return 'indeterminate';
+  };
 
   // Mock quick stats - in reality, this would be calculated
   const quickStats = useMemo(() => {
@@ -224,12 +234,16 @@ export default function ProfessionalForecastingPage() {
                 <Input readOnly placeholder="Selected cell formula/value (placeholder)" className="h-7 text-xs flex-1" />
             </div>
             <Table className="min-w-full whitespace-nowrap">
-              <TableHeader className="sticky top-0 bg-background/90 backdrop-blur-sm z-10"><TableRow>
+              <TableHeader className="sticky top-0 bg-background/90 backdrop-blur-sm z-10">
+                <TableRow>
                   <TableHead className="w-[50px] p-2 sticky left-0 bg-background/90 z-20">
                     <Checkbox 
-                        onCheckedChange={(checked) => handleSelectAll(!!checked)}
-                        checked={numSelected === mockProducts.length && mockProducts.length > 0}
-                        indeterminate={numSelected > 0 && numSelected < mockProducts.length}
+                        onCheckedChange={(isChecked) => {
+                            // Radix onCheckedChange for indeterminate can pass string 'indeterminate' or boolean
+                            // We want to treat click on indeterminate as 'select all'
+                            handleSelectAll(isChecked === 'indeterminate' ? true : !!isChecked);
+                        }}
+                        checked={getSelectAllCheckedState()}
                         aria-label="Select all rows"
                     />
                   </TableHead>
@@ -245,7 +259,8 @@ export default function ProfessionalForecastingPage() {
                   {visibleColumns.ensemble && <TableHead className="w-[120px] p-2 text-right cursor-pointer" onClick={() => requestSort('ensemble')}>Ensemble</TableHead>}
                   {visibleColumns.bestModel && <TableHead className="w-[120px] p-2 text-center cursor-pointer" onClick={() => requestSort('bestModel')}>Best Model</TableHead>}
                    <TableHead className="w-[50px] p-2 text-center">Edit</TableHead>
-                </TableRow></TableHeader>
+                </TableRow>
+              </TableHeader>
               <TableBody>
                 {mockProducts.map((product) => {
                   const forecasts = mockForecastData(product.currentStock);
@@ -370,3 +385,4 @@ export default function ProfessionalForecastingPage() {
     </div>
   );
 }
+
