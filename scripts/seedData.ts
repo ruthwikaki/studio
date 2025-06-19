@@ -1,8 +1,7 @@
 
 // scripts/seedData.ts
-import * as admin from 'firebase-admin';
-// Explicitly import Timestamp from firebase-admin/firestore
-import type { Timestamp as AdminTimestampType } from 'firebase-admin/firestore'; // Renamed for clarity if needed elsewhere
+import { db, AdminTimestamp, FieldValue, admin } from '@/lib/firebase/admin'; // Import initialized admin components
+import type { Timestamp as AdminTimestampType } from 'firebase-admin/firestore';
 import type {
   CompanyDocument, UserDocument, ProductDocument, InventoryStockDocument,
   SupplierDocument, OrderDocument, SalesHistoryDocument, ForecastDocument,
@@ -10,58 +9,36 @@ import type {
   DailyAggregateDocument
 } from '../src/lib/types/firestore';
 
-// --- Firebase Admin SDK Initialization ---
-let serviceAccount: any;
+// --- Project ID Check (for logging purposes only) ---
+let serviceAccountProjectId: string | undefined;
 try {
-  // IMPORTANT: Ensure the path to your Firebase service account key is correct.
-  // This file should be in the root of your project if using the path below.
-  // DO NOT COMMIT YOUR ACTUAL SERVICE ACCOUNT KEY TO PUBLIC REPOSITORIES.
-  serviceAccount = require("../../service-account-key.json"); // Path relative to script location in `scripts` dir
-  console.log(`[Seed Script] Successfully loaded service account key. Detected project_id: ${serviceAccount.project_id}`);
-
-  if (!serviceAccount.project_id) {
-    throw new Error("Service account key is missing 'project_id'. Please ensure it's a valid key from Firebase.");
-  }
-
+  const serviceAccountForLogging = require("../../service-account-key.json"); // Path relative to script
+  serviceAccountProjectId = serviceAccountForLogging.project_id;
+  console.log(`[Seed Script] Successfully loaded service account key for logging. Detected project_id: ${serviceAccountProjectId}`);
+  
   const expectedProjectId = "aria-jknbu"; // Define your expected project ID
-  if (serviceAccount.project_id !== expectedProjectId) {
-      console.warn(`[Seed Script] WARNING: Loaded service account key is for project '${serviceAccount.project_id}', but expected '${expectedProjectId}'. Make sure this is intentional.`);
-  }
-
-
-  if (!admin.apps.length) {
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      databaseURL: `https://${serviceAccount.project_id}.firebaseio.com`
-    });
-    console.log(`[Seed Script] Firebase Admin SDK initialized for project: ${serviceAccount.project_id}`);
-  } else {
-    console.log("[Seed Script] Firebase Admin SDK already initialized.");
+  if (serviceAccountProjectId !== expectedProjectId) {
+      console.warn(`[Seed Script] WARNING: Loaded service account key is for project '${serviceAccountProjectId}', but expected '${expectedProjectId}'. Make sure this is intentional.`);
   }
 } catch (error: any) {
-  console.error("--------------------------------------------------------------------");
-  console.error("[Seed Script] CRITICAL ERROR INITIALIZING FIREBASE ADMIN SDK:");
-  if (error.code === 'MODULE_NOT_FOUND' && error.message.includes('../../service-account-key.json')) { // Adjusted path for error message
-    console.error("  Reason: The 'service-account-key.json' file was not found. Expected at project root, path relative to script: ../../service-account-key.json");
-    console.error("  ACTION: Please download your service account key from your Firebase project settings and place it in the project root, naming it 'service-account-key.json'.");
-  } else if (error.message.includes("Service account key is missing 'project_id'")) {
-    console.error("  Reason: The 'service-account-key.json' file seems to be invalid or incomplete (missing 'project_id').");
-    console.error("  ACTION: Please re-download your service account key from Firebase and ensure it's correctly placed.");
-  } else if (error.message.includes("Failed to parse service account KeyFile")) {
-    console.error("  Reason: The 'service-account-key.json' file is not valid JSON.");
-    console.error("  ACTION: Please re-download your service account key from Firebase and ensure it's correctly placed and not corrupted.");
+  console.warn("[Seed Script] Could not load service-account-key.json for project ID logging. This is okay if the Admin SDK initialized correctly in admin.ts.");
+  if (error.code === 'MODULE_NOT_FOUND' && error.message.includes('../../service-account-key.json')) {
+    console.warn("  Reason: The 'service-account-key.json' file was not found in the project root. This file is needed by admin.ts for SDK initialization.");
+    console.warn("  ACTION: Please download your service account key from your Firebase project settings and place it in the project root, naming it 'service-account-key.json'.");
   }
-  else {
-    console.error("  Reason:", error.message);
-    console.error("  Details:", error);
-    console.error("  ACTION: Verify your 'service-account-key.json' is correct and accessible. Ensure it's not the placeholder file.");
-  }
-  console.error("--------------------------------------------------------------------");
-  process.exit(1); // Exit if SDK cannot be initialized
 }
-const db = admin.firestore();
-const FieldValue = admin.firestore.FieldValue; // For serverTimestamp
-const AdminTimestamp = admin.firestore.Timestamp; // Actual Timestamp class for fromDate, etc.
+// ------------------------------------------------------------------
+
+// --- Check if Firebase Admin SDK was initialized by admin.ts ---
+if (!admin.apps.length) {
+  console.error("--------------------------------------------------------------------");
+  console.error("[Seed Script] CRITICAL ERROR: Firebase Admin SDK does not seem to be initialized.");
+  console.error("  This usually means that 'src/lib/firebase/admin.ts' failed to initialize.");
+  console.error("  Please check the server startup logs for errors from 'admin.ts' related to 'service-account-key.json'.");
+  console.error("  The 'service-account-key.json' file must be in the project root directory and be a valid key from your Firebase project.");
+  console.error("--------------------------------------------------------------------");
+  process.exit(1); // Exit if SDK is not initialized
+}
 // ------------------------------------------------------------------
 
 
@@ -70,9 +47,8 @@ console.log("--- Data Seeding Script for SupplyChainAI ---");
 const MOCK_COMPANY_ID = 'comp_supplychainai_seed_001';
 const MOCK_USER_ID_OWNER = 'user_owner_seed_001';
 const MOCK_USER_ID_MANAGER = 'user_manager_seed_001';
-const MOCK_PRODUCT_IDS: Record<string, string> = {}; // To store generated product IDs by SKU
+const MOCK_PRODUCT_IDS: Record<string, string> = {};
 
-// Mock Data Definitions
 const mockCompany: Omit<CompanyDocument, 'id' | 'createdAt'> & { id: string, createdAt: Date } = {
   id: MOCK_COMPANY_ID,
   name: 'Seed Supply Co.',
@@ -113,7 +89,7 @@ const mockProductsRaw: (Omit<ProductDocument, 'id' | 'companyId' | 'createdAt' |
 
 const mockProducts: (Omit<ProductDocument, 'id' | 'createdAt' | 'lastUpdated' | 'deletedAt'> & {id: string, createdAt: Date, lastUpdated: Date})[] = mockProductsRaw.map((p, index) => {
   const id = `prod_seed_${String(index + 1).padStart(3, '0')}`;
-  MOCK_PRODUCT_IDS[p.sku] = id; // Store the generated ID
+  MOCK_PRODUCT_IDS[p.sku] = id;
   return {
     id,
     companyId: MOCK_COMPANY_ID,
@@ -219,7 +195,7 @@ const mockOrdersRaw: MockOrderRawItem[] = [
     totalAmount: 169.97,
     status: 'completed' as OrderStatus,
     orderDate: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
-    actualDeliveryDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // Sales order also has actual delivery
+    actualDeliveryDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
     createdBy: MOCK_USER_ID_MANAGER,
   },
 ];
@@ -258,13 +234,13 @@ const mockSalesHistory: (Omit<SalesHistoryDocument, 'id' | 'date' | 'deletedAt'>
   companyId: MOCK_COMPANY_ID,
   productId: MOCK_PRODUCT_IDS[s.skuForLookup],
   sku: s.skuForLookup,
-  orderId: s.orderId || null, // Convert undefined to null here
+  orderId: s.orderId || null,
   quantity: s.quantity,
   unitPrice: s.unitPrice,
   revenue: s.revenue,
   costAtTimeOfSale: s.costAtTimeOfSale,
   channel: s.channel,
-  customerId: s.customerId || null, // Convert undefined to null here
+  customerId: s.customerId || null,
   date: s.date,
 }));
 
@@ -351,14 +327,13 @@ const mockChatSessionsRaw: (Omit<ChatSessionDocument, 'id' | 'companyId' | 'crea
   },
 ];
 
-// Corrected mockChatSessions transformation
 const mockChatSessions: (Omit<ChatSessionDocument, 'id' | 'createdAt' | 'lastMessageAt' | 'messages'> & {id: string, createdAt: Date, lastMessageAt: Date, messages: ChatMessage[]})[] = mockChatSessionsRaw.map((chat, index) => {
   let messageTime = Date.now() - 120000; // 2 minutes ago for first message
   const processedMessages: ChatMessage[] = chat.messages.map((rawMsg, msgIndex) => {
       messageTime += (msgIndex * 5000); // Stagger messages by 5 seconds
       return {
-          ...rawMsg, // rawMsg is Omit<ChatMessage, 'timestamp'>
-          timestamp: AdminTimestamp.fromDate(new Date(messageTime)) // Assign a Firestore Timestamp
+          ...rawMsg,
+          timestamp: AdminTimestamp.fromDate(new Date(messageTime))
       };
   });
 
@@ -368,17 +343,16 @@ const mockChatSessions: (Omit<ChatSessionDocument, 'id' | 'createdAt' | 'lastMes
     userId: chat.userId,
     title: chat.title,
     contextSnapshot: chat.contextSnapshot,
-    messages: processedMessages, // messages now have Firestore Timestamps
-    createdAt: new Date(Date.now() - (index + 2) * 60 * 60 * 1000), // This is a JS Date
-    lastMessageAt: new Date(Date.now() - (index + 1) * 59 * 60 * 1000), // This is a JS Date
+    messages: processedMessages,
+    createdAt: new Date(Date.now() - (index + 2) * 60 * 60 * 1000),
+    lastMessageAt: new Date(Date.now() - (index + 1) * 59 * 60 * 1000),
   };
 });
 
 
-// Mock Daily Aggregate Data
 const mockDailyAggregate: Omit<DailyAggregateDocument, 'id' | 'date' | 'lastCalculated'> & { date: Date; lastCalculated: Date } = {
   companyId: MOCK_COMPANY_ID,
-  date: new Date(), // This will be today's date
+  date: new Date(), 
   totalInventoryValue: mockInventoryStock.reduce((sum, item) => sum + (item.quantity * item.unitCost), 0),
   lowStockItemsCount: mockInventoryStock.filter(item => item.quantity <= item.reorderPoint && item.reorderPoint > 0).length,
   outOfStockItemsCount: mockInventoryStock.filter(item => item.quantity === 0).length,
@@ -461,7 +435,6 @@ async function seedDatabase() {
   console.log(`Seeding ${mockSalesHistory.length} sales history records...`);
   mockSalesHistory.forEach(sh => {
     const shDocRef = db.collection('sales_history').doc(sh.id);
-    // Ensure all fields are defined or null
     const salesHistoryData = {
       ...sh,
       date: AdminTimestamp.fromDate(sh.date),
@@ -497,10 +470,8 @@ async function seedDatabase() {
   console.log(`Seeding ${mockChatSessions.length} chat sessions...`);
   mockChatSessions.forEach(chat => {
     const chatRef = db.collection('chat_sessions').doc(chat.id);
-    // chat.messages already contains Firestore Timestamps
-    // chat.createdAt and chat.lastMessageAt are JS Dates and need conversion
     batch.set(chatRef, {
-        companyId: chat.companyId, // Ensure all necessary fields are present
+        companyId: chat.companyId,
         userId: chat.userId,
         title: chat.title,
         contextSnapshot: chat.contextSnapshot,
@@ -529,7 +500,7 @@ async function seedDatabase() {
     console.error("[Seed Script] Error committing batch:", error);
     console.error("--------------------------------------------------------------------");
     console.error("  TROUBLESHOOTING: If you see 'NOT_FOUND' or permission errors:");
-    console.error(`  1. Ensure your Firebase project '${serviceAccount?.project_id || 'UNKNOWN'}' has Firestore enabled.`);
+    console.error(`  1. Ensure your Firebase project '${serviceAccountProjectId || admin.app().options.projectId || 'UNKNOWN'}' has Firestore enabled.`);
     console.error("     Go to Firebase Console -> Firestore Database -> Create database (if not already done).");
     console.error("  2. Select a region for your Firestore database (this is a one-time setup).");
     console.error("  3. Ensure the service account key being used has appropriate permissions (e.g., 'Owner' or 'Firebase Admin' or 'Cloud Datastore User').");
