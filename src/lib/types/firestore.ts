@@ -301,7 +301,7 @@ export interface DocumentMetadata {
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
-  timestamp: Timestamp;
+  timestamp: Timestamp | Date; // Allow Date for easier client-side handling before Firestore conversion
 }
 
 export interface ChatSessionDocument {
@@ -309,14 +309,15 @@ export interface ChatSessionDocument {
   companyId: string;
   userId: string; 
   messages: ChatMessage[];
-  context?: {
+  context?: { // Deprecated, replaced by contextSnapshot for more detail
     loadedInventoryDataSummary?: string; 
     currentFocusSKU?: string; 
     activeFlows?: string[]; 
   };
+  contextSnapshot?: string; // JSON string of the context provided to the AI for this session/turn
   createdAt: Timestamp;
   lastMessageAt: Timestamp;
-  title?: string; 
+  title?: string; // e.g., first user message, or AI generated title
   tags?: string[];
 }
 

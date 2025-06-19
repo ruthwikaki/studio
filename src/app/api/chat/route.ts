@@ -1,28 +1,27 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-// import { getFirestoreAdmin, FieldValue } from 'firebase-admin/firestore'; // Placeholder
-// import { verifyAuthToken } from '@/lib/firebase/admin-auth'; // Placeholder
-import { inventoryChat, InventoryChatInput, InventoryChatOutput } from '@/ai/flows/inventoryChat';
-import type { InventoryItemDocument, ChatSessionDocument, ChatMessage as FirestoreChatMessage } from '@/lib/types/firestore';
+import { db, AdminTimestamp, FieldValue } from '@/lib/firebase/admin';
+import { verifyAuthToken } from '@/lib/firebase/admin-auth';
+import { inventoryChat, InventoryChatInput, InventoryChatOutput, ChatContext } from '@/ai/flows/inventoryChat';
+import type { InventoryStockDocument, ChatSessionDocument, ChatMessage as FirestoreChatMessage, OrderDocument, SupplierDocument } from '@/lib/types/firestore';
 import { z } from 'zod';
-
-// Placeholder for Firestore instance
-// const db = getFirestoreAdmin();
 
 const ChatRequestSchema = z.object({
   message: z.string().min(1),
-  sessionId: z.string().optional(), // ID of an existing chat session
-  inventoryDataOverride: z.string().optional().describe("Optional JSON string of inventory data to use instead of fetching from Firestore. Useful for 'Chat with uploaded file' scenarios."),
+  sessionId: z.string().optional(),
+  // inventoryDataOverride is removed as context is now built server-side
 });
 
 export async function POST(request: NextRequest) {
-  // TODO: Implement Firebase Auth token verification
-  // const { uid: userId } = await verifyAuthToken(request);
-  // if (!userId) {
-  //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  // }
-  const userId = "mockUserId"; // Replace with actual uid
+  let companyId: string, userId: string;
+  try {
+    const authResult = await verifyAuthToken(request);
+    companyId = authResult.companyId;
+    userId = authResult.uid;
+  } catch (authError: any) {
+    return NextResponse.json({ error: authError.message || 'Authentication failed' }, { status: 401 });
+  }
 
   try {
     const body = await request.json();
@@ -32,88 +31,131 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid request data.', details: validationResult.error.format() }, { status: 400 });
     }
 
-    const { message: userQuery, sessionId: existingSessionId, inventoryDataOverride } = validationResult.data;
+    const { message: userQuery, sessionId: existingSessionId } = validationResult.data;
     let currentSessionId = existingSessionId;
     let conversationHistory: FirestoreChatMessage[] = [];
-    let inventoryDataJson: string;
 
-    if (inventoryDataOverride) {
-        inventoryDataJson = inventoryDataOverride;
-    } else {
-        // Fetch all inventory items for the user to provide as context
-        // In a real app, consider summarizing or sampling for very large inventories
-        // const inventorySnapshot = await db.collection('inventory').where('userId', '==', userId).get();
-        // const items: InventoryItemDocument[] = inventorySnapshot.docs.map(doc => doc.data() as InventoryItemDocument);
-        // inventoryDataJson = JSON.stringify(items.map(({userId, ...rest}) => rest)); // Remove userId before sending to AI
-        
-        // Mocked inventory for now if not overridden
-        const MOCK_ITEMS_FOR_CHAT = [
-            { sku: "SKU001", name: "Blue T-Shirt", quantity: 100, unitCost: 10, reorderPoint: 20, category: "Apparel" },
-            { sku: "SKU002", name: "Red Scarf", quantity: 10, unitCost: 15, reorderPoint: 15, category: "Accessories" },
-        ];
-        inventoryDataJson = JSON.stringify(MOCK_ITEMS_FOR_CHAT);
+    // --- Fetch Comprehensive Context ---
+    const chatContextData: ChatContext = {};
+
+    // 1. Inventory Summary & Low Stock
+    const inventorySnapshot = await db.collection('inventory')
+                                      .where('companyId', '==', companyId)
+                                      .get();
+    let totalItems = 0;
+    let totalValue = 0;
+    const lowStockItems: ChatContext['lowStockItems'] = [];
+    inventorySnapshot.docs.forEach(doc => {
+      const item = doc.data() as InventoryStockDocument;
+      totalItems++;
+      totalValue += (item.quantity || 0) * (item.unitCost || 0);
+      if (item.reorderPoint > 0 && (item.quantity || 0) <= item.reorderPoint) {
+        lowStockItems.push({ sku: item.sku, name: item.name, quantity: item.quantity, reorderPoint: item.reorderPoint });
+      }
+    });
+    chatContextData.inventorySummary = { totalItems, totalValue };
+    if (lowStockItems.length > 0) {
+      chatContextData.lowStockItems = lowStockItems;
     }
 
+    // 2. Recent Orders Summary (last 30 days, purchase orders)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const recentOrdersSnapshot = await db.collection('orders')
+      .where('companyId', '==', companyId)
+      .where('type', '==', 'purchase')
+      .where('orderDate', '>=', AdminTimestamp.fromDate(thirtyDaysAgo))
+      .get();
 
-    // If sessionId is provided, fetch existing chat history
+    let pendingPurchaseOrders = 0;
+    let awaitingDeliveryPurchaseOrders = 0;
+    recentOrdersSnapshot.docs.forEach(doc => {
+        const order = doc.data() as OrderDocument;
+        if (order.status === 'pending' || order.status === 'pending_approval') pendingPurchaseOrders++;
+        if (order.status === 'awaiting_delivery' || order.status === 'shipped') awaitingDeliveryPurchaseOrders++;
+    });
+    chatContextData.recentOrdersSummary = { pendingPurchaseOrders, awaitingDeliveryPurchaseOrders };
+
+    // 3. Top Suppliers (Top 3 by reliability score, or just recent if no scores)
+    const suppliersSnapshot = await db.collection('suppliers')
+                                     .where('companyId', '==', companyId)
+                                     .orderBy('reliabilityScore', 'desc') // Order by score if available
+                                     .limit(5) // Limit to a few top/recent suppliers
+                                     .get();
+    chatContextData.topSuppliers = suppliersSnapshot.docs.map(doc => {
+        const sup = doc.data() as SupplierDocument;
+        return { id: sup.id, name: sup.name, reliabilityScore: sup.reliabilityScore };
+    });
+    
+    // 4. Sales Trends Summary (Simplified for now)
+    chatContextData.salesTrendsSummary = "Sales data is available. Ask about specific products or overall performance for more detailed insights. For example, 'How has SKU001 sold recently?' or 'What are my best selling items?'.";
+
+    // --- Chat History and Session Management ---
     if (currentSessionId) {
-      // const sessionDoc = await db.collection('chatSessions').doc(currentSessionId).get();
-      // if (sessionDoc.exists && sessionDoc.data()?.userId === userId) {
-      //   conversationHistory = (sessionDoc.data() as ChatSessionDocument).messages;
-      // } else {
-      //   currentSessionId = undefined; // Session not found or not owned by user, start new
-      // }
-      // Mock: if session ID "known_session", provide some history
-      if (currentSessionId === "known_session") {
-        conversationHistory = [{ role: "user", content: "What's low?", timestamp: new Date(Date.now() - 60000) as any }];
+      const sessionDocSnap = await db.collection('chat_sessions').doc(currentSessionId).get();
+      if (sessionDocSnap.exists) {
+        const sessionData = sessionDocSnap.data() as ChatSessionDocument;
+        if (sessionData.companyId === companyId && sessionData.userId === userId) {
+          conversationHistory = sessionData.messages.map(msg => ({
+            ...msg,
+            timestamp: (msg.timestamp as AdminTimestamp).toDate() // Ensure JS Date for history
+          }));
+        } else {
+          // Session belongs to another user/company, treat as new
+          currentSessionId = undefined;
+          conversationHistory = [];
+        }
       } else {
-        currentSessionId = undefined; // Treat others as new for mock
+        currentSessionId = undefined; // Session not found
       }
     }
     
     const chatInput: InventoryChatInput = {
       query: userQuery,
-      inventoryData: inventoryDataJson,
-      conversationHistory: conversationHistory.map(msg => ({ role: msg.role, content: msg.content })),
+      chatContext: chatContextData,
+      conversationHistory: conversationHistory.map(msg => ({ role: msg.role, content: msg.content })), // For AI, content only
     };
 
     const aiResult: InventoryChatOutput = await inventoryChat(chatInput);
 
-    const userMessageEntry: FirestoreChatMessage = { role: 'user', content: userQuery, timestamp: new Date() as any /* FieldValue.serverTimestamp() */ };
-    const assistantMessageEntry: FirestoreChatMessage = { role: 'assistant', content: aiResult.response, timestamp: new Date() as any /* FieldValue.serverTimestamp() */ };
+    const userMessageEntry: FirestoreChatMessage = { role: 'user', content: userQuery, timestamp: FieldValue.serverTimestamp() };
+    const assistantMessageEntry: FirestoreChatMessage = { role: 'assistant', content: aiResult.answer, timestamp: FieldValue.serverTimestamp() };
 
-    // Store message in chatSessions collection
-    // if (currentSessionId) {
-    //   const sessionRef = db.collection('chatSessions').doc(currentSessionId);
-    //   await sessionRef.update({
-    //     messages: FieldValue.arrayUnion(userMessageEntry, assistantMessageEntry),
-    //     lastMessageAt: FieldValue.serverTimestamp(),
-    //   });
-    // } else {
-    //   const newSessionRef = db.collection('chatSessions').doc();
-    //   await newSessionRef.set({
-    //     userId,
-    //     messages: [userMessageEntry, assistantMessageEntry],
-    //     createdAt: FieldValue.serverTimestamp(),
-    //     lastMessageAt: FieldValue.serverTimestamp(),
-    //     context: { loadedInventoryDataSummary: inventoryDataOverride ? "Uploaded File" : "Firestore Data" },
-    //   });
-    //   currentSessionId = newSessionRef.id;
-    // }
-    if (!currentSessionId) currentSessionId = "new_mock_session_" + Date.now();
+    const contextSnapshotString = JSON.stringify(chatContextData);
 
+    if (currentSessionId) {
+      const sessionRef = db.collection('chat_sessions').doc(currentSessionId);
+      await sessionRef.update({
+        messages: FieldValue.arrayUnion(userMessageEntry, assistantMessageEntry),
+        lastMessageAt: FieldValue.serverTimestamp(),
+        contextSnapshot, // Update with the latest context for this turn
+      });
+    } else {
+      const newSessionRef = db.collection('chat_sessions').doc();
+      const sessionTitle = userQuery.substring(0, 50) + (userQuery.length > 50 ? '...' : '');
+      await newSessionRef.set({
+        companyId,
+        userId,
+        messages: [userMessageEntry, assistantMessageEntry],
+        createdAt: FieldValue.serverTimestamp(),
+        lastMessageAt: FieldValue.serverTimestamp(),
+        contextSnapshot: contextSnapshotString,
+        title: sessionTitle,
+      });
+      currentSessionId = newSessionRef.id;
+    }
 
     return NextResponse.json({ 
         data: { 
-            response: aiResult.response, 
-            actionableInsights: aiResult.actionableInsights,
+            ...aiResult, // Includes answer, data, suggestedActions, confidence
             sessionId: currentSessionId 
         } 
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error processing chat message:', error);
-    const message = error instanceof Error ? error.message : 'Failed to process chat message.';
+    const message = error.message || 'Failed to process chat message.';
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+

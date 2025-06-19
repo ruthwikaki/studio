@@ -11,9 +11,26 @@
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
+const ChatContextSchema = z.object({
+  inventorySummary: z.object({
+    totalItems: z.number(),
+    totalValue: z.number(),
+  }).optional().describe("Summary of overall inventory."),
+  lowStockItems: z.array(z.object({ sku: z.string(), name: z.string(), quantity: z.number(), reorderPoint: z.number() })).optional().describe("List of items currently low in stock."),
+  recentOrdersSummary: z.object({
+    pendingPurchaseOrders: z.number(),
+    awaitingDeliveryPurchaseOrders: z.number(),
+  }).optional().describe("Summary of recent purchase orders."),
+  topSuppliers: z.array(z.object({ id: z.string(), name: z.string(), reliabilityScore: z.number().optional() })).optional().describe("List of top or recent suppliers."),
+  salesTrendsSummary: z.string().optional().describe("A brief textual summary of recent sales trends."),
+  // Deprecated field: inventoryData: z.string().optional().describe('The inventory data as a JSON string. This data is typically loaded from Firestore or a parsed file before calling the flow.'),
+});
+export type ChatContext = z.infer<typeof ChatContextSchema>;
+
+
 const InventoryChatInputSchema = z.object({
   query: z.string().describe('The natural language query about inventory data.'),
-  inventoryData: z.string().describe('The inventory data as a JSON string. This data is typically loaded from Firestore or a parsed file before calling the flow.'),
+  chatContext: ChatContextSchema.optional().describe("Structured context about the inventory, suppliers, and orders."),
   conversationHistory: z.array(z.object({
     role: z.enum(['user', 'assistant']),
     content: z.string(),
@@ -22,8 +39,10 @@ const InventoryChatInputSchema = z.object({
 export type InventoryChatInput = z.infer<typeof InventoryChatInputSchema>;
 
 const InventoryChatOutputSchema = z.object({
-  response: z.string().describe('The AI-powered textual response to the inventory query.'),
-  actionableInsights: z.array(z.string()).optional().describe('A list of actionable insights derived from the query and data, if applicable.'),
+  answer: z.string().describe('The AI-powered natural language textual response to the inventory query.'),
+  data: z.record(z.string(), z.any()).optional().describe('Structured data related to the query, if applicable (e.g., a list of low stock items, supplier details, calculated values). The key indicates the type of data (e.g., "lowStockList", "inventoryValue").'),
+  suggestedActions: z.array(z.string()).optional().describe('A list of actionable insights or next steps derived from the query and data, if applicable.'),
+  confidence: z.number().min(0).max(1).optional().describe("AI's confidence in the answer (0.0 to 1.0).")
 });
 export type InventoryChatOutput = z.infer<typeof InventoryChatOutputSchema>;
 
@@ -35,22 +54,30 @@ const prompt = ai.definePrompt({
   name: 'inventoryChatPrompt',
   input: {schema: InventoryChatInputSchema},
   output: {schema: InventoryChatOutputSchema},
-  prompt: `You are SupplyChainAI, an expert AI assistant specializing in providing insights about inventory data.
-  You will be provided with inventory data in JSON format and a natural language query from the user.
-  Your goal is to answer the user's query based on the provided inventory data and conversation history.
-  Answer questions related to:
-  - Items running low or needing reordering.
-  - Dead stock identification.
-  - Product turnover analysis.
-  - Recommendations for what to reorder.
-  - General queries about product quantities, values, or categories.
+  prompt: `You are SupplyChainAI, an expert AI assistant specializing in providing insights about inventory, orders, and suppliers.
+  You are provided with a 'chatContext' object containing summarized information and a user 'query'.
+  Your goal is to answer the user's query based on the provided context and conversation history.
 
-  Provide a direct textual response. If applicable, also provide a list of actionable insights.
+  Available Context ({{{jsonStringify chatContext}}}):
+  - inventorySummary: Overall count and value of items.
+  - lowStockItems: Specific items that are below their reorder points.
+  - recentOrdersSummary: Counts of pending and awaiting delivery purchase orders.
+  - topSuppliers: Information about key suppliers.
+  - salesTrendsSummary: A high-level text summary of sales.
 
-  Inventory Data:
-  \`\`\`${'json'}
-  {{{inventoryData}}}
-  \`\`\`
+  Based on the user's query:
+  1. Provide a concise, natural language 'answer'.
+  2. If the query asks for specific data that can be listed (e.g., "Which items are low?"), provide that data in the 'data' field. The key for the 'data' field should be descriptive (e.g., "lowStockList", "supplierDetails", "inventoryValueCalculation").
+  3. If applicable, suggest relevant 'suggestedActions' for the user.
+  4. Provide a 'confidence' score (0.0 to 1.0) for your answer.
+
+  Sophisticated Query Handling:
+  - "What items haven't sold in X days?": State that you'd need to query sales history for items with no sales entries after a certain date.
+  - "Which supplier is most reliable?": Use the 'topSuppliers' context. If it contains reliability scores, state the most reliable. If not, explain you need more detailed supplier performance data.
+  - "What's my total inventory value?": Use 'inventorySummary.totalValue' from context if available. If not, state that you'd need to sum (quantity * unitCost) for all items.
+  - "Show me dead stock": Explain you would identify items with no sales in the last 90-180 days (or a similar period).
+  - "What are my best selling items?": Explain you'd need to aggregate sales data by SKU to find top revenue or quantity sold.
+  - "Compare suppliers for [product SKU/name]": Explain you would need pricing, lead time, and reliability data for suppliers who offer that product.
 
   Conversation History:
   {{#each conversationHistory}}
@@ -60,7 +87,8 @@ const prompt = ai.definePrompt({
 
   User Query: {{{query}}}
 
-  Please provide your analysis.
+  Please provide your analysis in the specified JSON output format.
+  If the context is insufficient to fully answer, explain what additional data or analysis would be needed.
   `,
   config: {
     safetySettings: [
@@ -69,6 +97,7 @@ const prompt = ai.definePrompt({
       {category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE'},
       {category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_LOW_AND_ABOVE'},
     ],
+    temperature: 0.3, // Slightly lower for more factual responses
   },
 });
 
@@ -78,11 +107,20 @@ const inventoryChatFlow = ai.defineFlow(
     inputSchema: InventoryChatInputSchema,
     outputSchema: InventoryChatOutputSchema,
   },
-  async input => {
+  async (input) => {
     const {output} = await prompt(input);
     if (!output) {
-      throw new Error("AI failed to generate a response for the inventory chat.");
+      // Fallback response if AI doesn't return structured output
+      return {
+        answer: "I encountered an issue processing your request. Please try rephrasing or ask a different question.",
+        confidence: 0.1,
+      };
+    }
+    // Ensure confidence is set, even if LLM omits it
+    if (output.confidence === undefined) {
+        output.confidence = 0.7; // Default confidence if not provided by LLM
     }
     return output;
   }
 );
+

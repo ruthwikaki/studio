@@ -10,3 +10,4 @@ import '@/ai/flows/reorderOptimization.ts';
 import '@/ai/flows/supplierAnalysis.ts';
 import '@/ai/flows/marketIntelligence.ts';
 import '@/ai/flows/documentExtraction.ts';
+import '@/ai/flows/inventoryAnalysisReport.ts'; // Added new flow
