@@ -1,78 +1,106 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-// import { getFirestoreAdmin, FieldValue } from 'firebase-admin/firestore'; // Placeholder
-// import { verifyAuthToken } from '@/lib/firebase/admin-auth'; // Placeholder
+import { db, FieldValue, AdminTimestamp } from '@/lib/firebase/admin';
+import { verifyAuthToken } from '@/lib/firebase/admin-auth';
 import type { SupplierDocument, SupplierProductInfo } from '@/lib/types/firestore';
 import { CreateSupplierSchema } from '@/hooks/useSuppliers'; // Using Zod schema from hook for validation
 
-// Placeholder for Firestore instance
-// const db = getFirestoreAdmin();
-
 export async function GET(request: NextRequest) {
-  // TODO: Implement Firebase Auth token verification
-  // const { uid } = await verifyAuthToken(request);
-  // if (!uid) {
-  //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  // }
-  // const userId = uid;
+  let companyId: string;
+  try {
+    ({ companyId } = await verifyAuthToken(request));
+  } catch (authError: any) {
+    return NextResponse.json({ error: authError.message || 'Authentication failed' }, { status: 401 });
+  }
 
   const { searchParams } = new URL(request.url);
   const page = parseInt(searchParams.get('page') || '1');
   const limit = parseInt(searchParams.get('limit') || '10');
   const searchTerm = searchParams.get('search');
-  const reliability = searchParams.get('reliability'); // e.g. "high", "medium", "low" or score range
-  const leadTime = searchParams.get('leadTime'); // e.g. "0-7", "8-14"
+  const reliabilityFilter = searchParams.get('reliability'); // e.g. "85-100"
+  const leadTimeFilter = searchParams.get('leadTime'); // e.g. "0-7"
 
   try {
-    // Placeholder for Firestore query
-    // let query = db.collection('suppliers').where('userId', '==', userId);
-    // if (searchTerm) {
-    //   // Complex search might require Algolia/Typesense or multiple field checks
-    //   query = query.where('name', '>=', searchTerm).where('name', '<=', searchTerm + '\uf8ff');
-    // }
-    // if (reliability) { /* Add reliability filter */ }
-    // if (leadTime) { /* Add lead time filter */ }
+    let query: admin.firestore.Query<admin.firestore.DocumentData> = db.collection('suppliers').where('companyId', '==', companyId);
 
-    // const snapshot = await query.limit(limit).offset((page - 1) * limit).get();
-    // const suppliers: SupplierDocument[] = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SupplierDocument));
-    // const totalItemsSnapshot = await query.count().get();
-    // const totalItems = totalItemsSnapshot.data().count;
+    if (searchTerm) {
+      // Basic prefix search on name. For "contains" or more advanced search, a dedicated search service is better.
+      query = query.orderBy('name').startAt(searchTerm).endAt(searchTerm + '\uf8ff');
+    }
 
-    // Mocked response
-    const MOCK_SUPPLIERS: SupplierDocument[] = [
-      { id: "SUP001", userId: "user123", name: "Global Electronics Ltd.", email: "sales@globalelec.com", leadTimeDays: 14, reliabilityScore: 85, productsSupplied: [{productId: "SKU002", sku: "SKU002", name:"Wireless Mouse", lastPrice: 18, moqForItem: 50}], lastOrderDate: new Date() as any, createdAt: new Date() as any, lastUpdated: new Date() as any, logoUrl: "https://placehold.co/60x60.png" },
-      { id: "SUP002", userId: "user123", name: "ApparelCo", email: "orders@apparelco.com", leadTimeDays: 7, reliabilityScore: 92, productsSupplied: [{productId: "SKU001", sku: "SKU001", name:"Blue T-Shirt", lastPrice: 9, moqForItem: 100}], lastOrderDate: new Date() as any, createdAt: new Date() as any, lastUpdated: new Date() as any, logoUrl: "https://placehold.co/60x60.png" },
-      { id: "SUP003", userId: "user123", name: "OfficePro Supplies", email: "contact@officepro.com", leadTimeDays: 5, reliabilityScore: 70, productsSupplied: [{productId: "SKU005", sku:"SKU005", name:"Laptop Stand", lastPrice: 15, moqForItem: 20}], lastOrderDate: new Date() as any, createdAt: new Date() as any, lastUpdated: new Date() as any, logoUrl: "https://placehold.co/60x60.png" },
-    ];
+    if (reliabilityFilter) {
+      const [minRel, maxRel] = reliabilityFilter.split('-').map(Number);
+      if (!isNaN(minRel)) query = query.where('reliabilityScore', '>=', minRel);
+      if (!isNaN(maxRel)) query = query.where('reliabilityScore', '<=', maxRel);
+      // Note: Firestore requires an orderBy for range filters if not the first orderBy.
+      // If searchTerm is also used, this might require a composite index or client-side filtering for complex scenarios.
+      // For now, if searchTerm is present, name is already ordered. If not, order by reliabilityScore.
+      if (!searchTerm) query = query.orderBy('reliabilityScore');
+    }
+
+    if (leadTimeFilter) {
+      const [minLead, maxLead] = leadTimeFilter.split('-').map(Number);
+      if (leadTimeFilter.endsWith('+')) { // e.g. "15+"
+         if (!isNaN(minLead)) query = query.where('leadTimeDays', '>=', minLead);
+      } else {
+        if (!isNaN(minLead)) query = query.where('leadTimeDays', '>=', minLead);
+        if (!isNaN(maxLead)) query = query.where('leadTimeDays', '<=', maxLead);
+      }
+       if (!searchTerm && !reliabilityFilter) query = query.orderBy('leadTimeDays');
+    }
     
-    const filteredSuppliers = MOCK_SUPPLIERS.filter(s => {
-        let matches = true;
-        if (searchTerm) matches = matches && s.name.toLowerCase().includes(searchTerm.toLowerCase());
-        // Add more filter logic here based on reliability and leadTime if implementing client-side filtering for mock
-        return matches;
+    // Default sort if no other sorting is applied
+    if (!searchTerm && !reliabilityFilter && !leadTimeFilter) {
+        query = query.orderBy('name');
+    }
+
+
+    const totalItemsSnapshot = await query.count().get();
+    const totalItems = totalItemsSnapshot.data().count;
+    const totalPages = Math.ceil(totalItems / limit);
+
+    const paginatedQuery = query.limit(limit).offset((page - 1) * limit);
+    const snapshot = await paginatedQuery.get();
+    
+    const suppliers: SupplierDocument[] = snapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        createdAt: (data.createdAt as AdminTimestamp)?.toDate().toISOString(),
+        lastUpdated: (data.lastUpdated as AdminTimestamp)?.toDate().toISOString(),
+        lastOrderDate: (data.lastOrderDate as AdminTimestamp)?.toDate().toISOString(),
+      } as SupplierDocument;
     });
-
-    const paginatedSuppliers = filteredSuppliers.slice((page - 1) * limit, page * limit);
-
+    
     return NextResponse.json({ 
-        data: paginatedSuppliers, 
-        pagination: { currentPage: page, pageSize: limit, totalItems: filteredSuppliers.length, totalPages: Math.ceil(filteredSuppliers.length / limit) } 
+        data: suppliers, 
+        pagination: { currentPage: page, pageSize: limit, totalItems, totalPages } 
     });
-  } catch (error) {
+
+  } catch (error: any) {
     console.error('Error fetching suppliers:', error);
-    const message = error instanceof Error ? error.message : 'Failed to fetch suppliers.';
+    if (error.code === 'failed-precondition') {
+      return NextResponse.json({ 
+        error: 'Query requires an index. Please create the necessary composite index in Firestore.',
+        details: error.message
+      }, { status: 400 });
+    }
+    const message = error.message || 'Failed to fetch suppliers.';
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
-  // TODO: Implement Firebase Auth token verification
-  // const { uid } = await verifyAuthToken(request);
-  // if (!uid) {
-  //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  // }
-  const userId = "mockUserId"; // Replace with actual uid
+  let companyId: string, userId: string;
+  try {
+    const authResult = await verifyAuthToken(request);
+    companyId = authResult.companyId;
+    userId = authResult.uid;
+  } catch (authError: any) {
+    return NextResponse.json({ error: authError.message || 'Authentication failed' }, { status: 401 });
+  }
 
   try {
     const body = await request.json();
@@ -82,53 +110,44 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid supplier data.', details: validationResult.error.format() }, { status: 400 });
     }
 
-    const newSupplierData = validationResult.data;
+    const { productsSuppliedSkus, ...newSupplierData } = validationResult.data;
     
-    // Convert productsSuppliedSkus to SupplierProductInfo[] (simplified)
-    // In a real scenario, you'd fetch product names based on SKUs
-    const productsSupplied: SupplierProductInfo[] = (newSupplierData.productsSuppliedSkus || []).map(sku => ({
-        productId: sku, // Assuming SKU is product ID
+    const productsSupplied: SupplierProductInfo[] = (productsSuppliedSkus || []).map(sku => ({
+        productId: sku, // Assuming SKU is product ID for now
         sku: sku,
-        name: `Product ${sku}`, // Placeholder name
+        name: `Product ${sku}`, // Placeholder name, ideally fetch or allow detailed entry
     }));
 
-    const supplierDoc: Omit<SupplierDocument, 'id' | 'createdAt' | 'lastUpdated'> = {
-      userId,
-      name: newSupplierData.name,
-      email: newSupplierData.email,
-      phone: newSupplierData.phone,
-      address: newSupplierData.address,
-      contactPerson: newSupplierData.contactPerson,
-      leadTimeDays: newSupplierData.leadTimeDays,
-      reliabilityScore: newSupplierData.reliabilityScore,
-      paymentTerms: newSupplierData.paymentTerms,
-      moq: newSupplierData.moq,
+    const supplierDocRef = db.collection('suppliers').doc();
+    const fullSupplierData: Omit<SupplierDocument, 'id' | 'createdAt' | 'lastUpdated'> & { createdAt: FirebaseFirestore.FieldValue, lastUpdated: FirebaseFirestore.FieldValue, createdBy: string } = {
+      companyId,
+      createdBy: userId,
+      ...newSupplierData,
+      leadTimeDays: newSupplierData.leadTimeDays ?? 0, // Ensure number or default
+      reliabilityScore: newSupplierData.reliabilityScore ?? 0,
+      moq: newSupplierData.moq ?? 0,
       productsSupplied: productsSupplied,
-      notes: newSupplierData.notes,
-      // lastOrderDate, totalSpend, onTimeDeliveryRate, etc., would be updated by other processes
+      createdAt: FieldValue.serverTimestamp(),
+      lastUpdated: FieldValue.serverTimestamp(),
     };
 
-    // Placeholder for Firestore document creation
-    // const supplierRef = db.collection('suppliers').doc();
-    // await supplierRef.set({
-    //   ...supplierDoc,
-    //   createdAt: FieldValue.serverTimestamp(),
-    //   lastUpdated: FieldValue.serverTimestamp(),
-    // });
-    // const createdSupplier = { id: supplierRef.id, ...supplierDoc, createdAt: new Date(), lastUpdated: new Date() } as SupplierDocument;
-    
-    const mockCreatedSupplier: SupplierDocument = {
-        id: "SUP" + Date.now(),
-        ...supplierDoc,
-        logoUrl: "https://placehold.co/60x60.png",
-        createdAt: new Date() as any,
-        lastUpdated: new Date() as any,
-    };
+    await supplierDocRef.set(fullSupplierData);
+    const createdDoc = await supplierDocRef.get();
+    const createdData = createdDoc.data();
 
-    return NextResponse.json({ data: mockCreatedSupplier, message: 'Supplier created successfully.' }, { status: 201 });
-  } catch (error) {
+    const responseSupplier = {
+      id: createdDoc.id,
+      ...createdData,
+      createdAt: (createdData?.createdAt as AdminTimestamp)?.toDate().toISOString(),
+      lastUpdated: (createdData?.lastUpdated as AdminTimestamp)?.toDate().toISOString(),
+    } as SupplierDocument;
+
+
+    return NextResponse.json({ data: responseSupplier, message: 'Supplier created successfully.' }, { status: 201 });
+
+  } catch (error: any) {
     console.error('Error creating supplier:', error);
-    const message = error instanceof Error ? error.message : 'Failed to create supplier.';
+    const message = error.message || 'Failed to create supplier.';
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

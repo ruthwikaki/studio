@@ -1,26 +1,24 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-// import { getFirestoreAdmin, FieldValue } from 'firebase-admin/firestore'; // Placeholder
-// import { verifyAuthToken } from '@/lib/firebase/admin-auth'; // Placeholder
+import { db, FieldValue, AdminTimestamp } from '@/lib/firebase/admin';
+import { verifyAuthToken } from '@/lib/firebase/admin-auth';
 import { z } from 'zod';
-
-// Placeholder for Firestore instance
-// const db = getFirestoreAdmin();
+import type { OrderDocument } from '@/lib/types/firestore';
 
 const ScoreRequestSchema = z.object({
   supplierId: z.string().min(1),
-  // Potentially include other factors or data for score calculation if not derived from existing DB records
-  // e.g., manual overrides, specific incident reports etc.
 });
 
 export async function POST(request: NextRequest) {
-  // TODO: Implement Firebase Auth token verification
-  // const { uid } = await verifyAuthToken(request);
-  // if (!uid) {
-  //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  // }
-  // const userId = uid;
+  let companyId: string, userId: string;
+  try {
+    const authResult = await verifyAuthToken(request);
+    companyId = authResult.companyId;
+    userId = authResult.uid;
+  } catch (authError: any) {
+    return NextResponse.json({ error: authError.message || 'Authentication failed' }, { status: 401 });
+  }
 
   try {
     const body = await request.json();
@@ -32,36 +30,78 @@ export async function POST(request: NextRequest) {
 
     const { supplierId } = validationResult.data;
 
-    // --- Placeholder for complex reliability score calculation ---
-    // This would involve:
-    // 1. Fetching supplier data: db.collection('suppliers').doc(supplierId).get()
-    // 2. Fetching related order history: db.collection('orders').where('supplierId', '==', supplierId).where('userId', '==', userId).get()
-    // 3. Analyzing on-time delivery, quality from returns/feedback (if tracked), order fill rates, etc.
-    // 4. Applying a weighting formula to these factors.
-    // 5. Updating the supplier document with the new score and lastUpdated timestamp.
-    // const supplierRef = db.collection('suppliers').doc(supplierId);
-    // const supplierDoc = await supplierRef.get();
-    // if (!supplierDoc.exists || supplierDoc.data()?.userId !== userId) {
-    //   return NextResponse.json({ error: 'Supplier not found or access denied.' }, { status: 404 });
-    // }
+    const supplierRef = db.collection('suppliers').doc(supplierId);
+    const supplierDoc = await supplierRef.get();
 
-    const newCalculatedScore = Math.floor(Math.random() * 31) + 70; // Mock: random score between 70-100
+    if (!supplierDoc.exists) {
+      return NextResponse.json({ error: 'Supplier not found.' }, { status: 404 });
+    }
+    if (supplierDoc.data()?.companyId !== companyId) {
+      return NextResponse.json({ error: 'Access denied to this supplier.' }, { status: 403 });
+    }
 
-    // await supplierRef.update({
-    //   reliabilityScore: newCalculatedScore,
-    //   lastUpdated: FieldValue.serverTimestamp(),
-    // });
+    // Simplified Reliability Score Calculation
+    // Fetch recent orders from this supplier (e.g., last 50 completed/delivered purchase orders)
+    const ordersSnapshot = await db.collection('orders')
+                                   .where('companyId', '==', companyId)
+                                   .where('supplierId', '==', supplierId)
+                                   .where('type', '==', 'purchase')
+                                   .where('status', 'in', ['delivered', 'completed']) // Consider only finished orders
+                                   .orderBy('orderDate', 'desc')
+                                   .limit(50) // Limit for performance
+                                   .get();
+
+    let onTimeDeliveries = 0;
+    let totalRelevantOrders = 0;
+    let baseScore = 75; // Start with a base score
+
+    ordersSnapshot.docs.forEach(doc => {
+      const order = doc.data() as OrderDocument;
+      totalRelevantOrders++;
+      if (order.expectedDate && order.actualDeliveryDate) {
+        const expected = (order.expectedDate as AdminTimestamp).toDate();
+        const actual = (order.actualDeliveryDate as AdminTimestamp).toDate();
+        if (actual <= expected) {
+          onTimeDeliveries++;
+        }
+      } else {
+        // If dates are missing, count as neutral or slightly penalize
+        onTimeDeliveries += 0.5; // Neutral contribution if dates missing
+      }
+    });
+
+    if (totalRelevantOrders > 0) {
+      const onTimeRate = (onTimeDeliveries / totalRelevantOrders);
+      // Scale onTimeRate (0-1) to a score impact (e.g., +/- 20 points)
+      // If onTimeRate is 1 (100%), adds 20. If 0.5 (50%), adds 0. If 0, subtracts 20.
+      const scoreImpactFromDelivery = (onTimeRate - 0.5) * 40; 
+      baseScore += scoreImpactFromDelivery;
+    }
+    
+    // Placeholder for quality & communication factors (would need more data models)
+    // For now, let's add a small random factor to simulate other influences or if no order data
+    if (totalRelevantOrders < 5) { // If few orders, make score less certain
+        baseScore += (Math.random() * 10) - 5; // +/- 5 points
+    }
+
+    const newCalculatedScore = Math.max(0, Math.min(100, Math.round(baseScore)));
+
+    await supplierRef.update({
+      reliabilityScore: newCalculatedScore,
+      lastUpdated: FieldValue.serverTimestamp(),
+      lastUpdatedBy: userId,
+    });
 
     return NextResponse.json({ 
         data: { 
             supplierId, 
             newReliabilityScore: newCalculatedScore,
-            message: `Reliability score for supplier ${supplierId} recalculated (mocked).`
+            message: `Reliability score for supplier ${supplierId} recalculated.`
         } 
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error calculating supplier score:', error);
-    const message = error instanceof Error ? error.message : 'Failed to calculate supplier score.';
+    const message = error.message || 'Failed to calculate supplier score.';
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
