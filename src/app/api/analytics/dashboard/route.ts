@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { db, AdminTimestamp } from '@/lib/firebase/admin';
 import { verifyAuthToken } from '@/lib/firebase/admin-auth';
-import type { DailyAggregateDocument } from '@/lib/types/firestore';
+import type { InventoryStockDocument, OrderDocument, SalesHistoryDocument, DailyAggregateDocument } from '@/lib/types/firestore';
 
 export const revalidate = 300; // Revalidate every 5 minutes
 
@@ -15,13 +15,14 @@ interface DashboardKPIs {
   todaysRevenue: number;
   inventoryValueByCategory?: Record<string, number>;
   lastUpdated: string;
+  turnoverRate?: number;
 }
 
 export async function GET(request: NextRequest) {
   let companyId: string;
   try {
     ({ companyId } = await verifyAuthToken(request));
-  } catch (authError: any)_ {
+  } catch (authError: any) {
     return NextResponse.json({ error: authError.message || 'Authentication failed' }, { status: 401 });
   }
 
@@ -56,6 +57,7 @@ export async function GET(request: NextRequest) {
                                           .where('companyId', '==', companyId)
                                           .where('type', '==', 'purchase')
                                           .where('status', 'in', ['pending', 'pending_approval', 'processing', 'awaiting_shipment'])
+                                          .where('deletedAt', '==', null)
                                           .count()
                                           .get();
       kpis.pendingOrdersCount = pendingOrdersSnapshot.data().count;
@@ -63,7 +65,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ data: kpis, source: 'aggregate' });
     } else {
       // --- FALLBACK: Calculate live if aggregate not found (costly for production) ---
-      console.warn(`Aggregate document ${aggregateDocId} not found. Calculating live KPIs for dashboard (this can be slow).`);
+      console.warn(`Aggregate document ${aggregateDocId} not found. Calculating live KPIs for dashboard for company ${companyId} (this can be slow).`);
       
       console.time(`calculateLiveDashboardData-${companyId}`);
       const inventorySnapshot = await db.collection('inventory')
@@ -77,7 +79,7 @@ export async function GET(request: NextRequest) {
       const inventoryValueByCategory: Record<string, number> = {};
 
       inventorySnapshot.docs.forEach(doc => {
-        const item = doc.data();
+        const item = doc.data() as InventoryStockDocument;
         const quantity = typeof item.quantity === 'number' ? item.quantity : 0;
         const unitCost = typeof item.unitCost === 'number' ? item.unitCost : 0;
         const reorderPoint = typeof item.reorderPoint === 'number' ? item.reorderPoint : 0;
@@ -114,7 +116,7 @@ export async function GET(request: NextRequest) {
                                           .get();
       let todaysRevenue = 0;
       salesTodaySnapshot.docs.forEach(doc => {
-        const sale = doc.data();
+        const sale = doc.data() as SalesHistoryDocument;
         todaysRevenue += typeof sale.revenue === 'number' ? sale.revenue : 0;
       });
       console.timeEnd(`calculateLiveDashboardData-${companyId}`);
@@ -132,7 +134,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ data: kpis, source: 'live_calculation' });
     }
   } catch (error: any) {
-    console.error('Error fetching dashboard analytics:', error);
+    console.error(`Error fetching dashboard analytics for company ${companyId}:`, error);
     if (error.code === 'failed-precondition') {
         return NextResponse.json({ 
             error: 'A Firestore query failed, possibly due to a missing index. Please check server logs for a link to create the index.',
@@ -143,3 +145,4 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+

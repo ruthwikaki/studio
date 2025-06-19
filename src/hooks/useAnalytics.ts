@@ -13,10 +13,14 @@ interface DashboardKPIs {
   totalInventoryValue: number;
   lowStockItemsCount: number;
   outOfStockItemsCount: number;
-  turnoverRate?: number;
+  pendingOrdersCount: number;
+  todaysRevenue: number;
+  inventoryValueByCategory?: Record<string, number>;
+  lastUpdated: string;
+  turnoverRate?: number; // Added from previous update
 }
 
-const fetchDashboardKPIs = async (): Promise<{ data: DashboardKPIs }> => {
+const fetchDashboardKPIs = async (): Promise<{ data: DashboardKPIs, source: string }> => {
   const response = await fetch('/api/analytics/dashboard');
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ error: 'Failed to fetch dashboard KPIs' }));
@@ -26,55 +30,54 @@ const fetchDashboardKPIs = async (): Promise<{ data: DashboardKPIs }> => {
 };
 
 export function useAnalyticsDashboard(options?: { refetchInterval?: number | false }) {
-  return useQuery<{ data: DashboardKPIs }, Error>({
+  return useQuery<{ data: DashboardKPIs, source: string }, Error>({
     queryKey: [ANALYTICS_DASHBOARD_QUERY_KEY],
     queryFn: fetchDashboardKPIs,
-    refetchInterval: options?.refetchInterval, // e.g., 30000 for 30 seconds
+    refetchInterval: options?.refetchInterval,
   });
 }
 
+interface GenerateForecastJobResponse {
+  message: string;
+  jobId: string;
+}
 
-const generateDemandForecastAPI = async (input: ForecastDemandInput): Promise<ForecastDemandOutput> => {
+const generateDemandForecastAPI = async (input: ForecastDemandInput): Promise<GenerateForecastJobResponse> => {
   const response = await fetch('/api/analytics/forecast', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ error: 'Failed to generate forecast' }));
-    throw new Error(errorData.error || 'Failed to generate forecast');
+    const errorData = await response.json().catch(() => ({ error: 'Failed to queue forecast generation' }));
+    throw new Error(errorData.error || 'Failed to queue forecast generation');
   }
-  const result = await response.json();
-  return result.data; // Assuming API wraps Genkit output in { data: ... }
+  // The API now returns a job ID and message
+  return response.json();
 };
 
 export function useGenerateDemandForecast() {
   const { toast } = useToast();
-  // const queryClient = useQueryClient(); // If you need to invalidate or update other queries on success
+  const queryClient = useQueryClient();
 
-  return useMutation<ForecastDemandOutput, Error, ForecastDemandInput>({
+  return useMutation<GenerateForecastJobResponse, Error, ForecastDemandInput>({
     mutationKey: [DEMAND_FORECAST_MUTATION_KEY],
     mutationFn: generateDemandForecastAPI,
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       toast({
-        title: 'Forecast Generated',
-        description: `Successfully generated demand forecast for SKU: ${data.sku}.`,
+        title: 'Forecast Queued',
+        description: `${data.message} (Job ID: ${data.jobId}). SKU: ${variables.sku}`,
       });
-      // Example: queryClient.invalidateQueries({ queryKey: ['someRelatedForecastQuery'] });
-      // Return data so it can be used in the component's onSubmit
-      return data;
+      // Optionally, you might want to invalidate queries related to job statuses or forecast lists here
+      // e.g., queryClient.invalidateQueries({ queryKey: ['forecastJobs'] });
+      // queryClient.invalidateQueries({ queryKey: ['forecasts', variables.sku] }); // To refetch when job is done
     },
     onError: (error) => {
       toast({
-        title: 'Forecast Generation Failed',
+        title: 'Forecast Queue Failed',
         description: error.message || 'An unknown error occurred.',
         variant: 'destructive',
       });
     },
   });
 }
-
-
-// Placeholder for AI insights
-// export function useAnalyticsInsights() { ... }
-
