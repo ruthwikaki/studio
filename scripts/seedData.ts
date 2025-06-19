@@ -16,7 +16,7 @@ try {
   // IMPORTANT: Ensure the path to your Firebase service account key is correct.
   // This file should be in the root of your project if using the path below.
   // DO NOT COMMIT YOUR ACTUAL SERVICE ACCOUNT KEY TO PUBLIC REPOSITORIES.
-  serviceAccount = require("../service-account-key.json"); // Path relative to script location in `scripts` dir
+  serviceAccount = require("../../service-account-key.json"); // Path relative to script location in `scripts` dir
   console.log(`[Seed Script] Successfully loaded service account key. Detected project_id: ${serviceAccount.project_id}`);
 
   if (!serviceAccount.project_id) {
@@ -41,8 +41,8 @@ try {
 } catch (error: any) {
   console.error("--------------------------------------------------------------------");
   console.error("[Seed Script] CRITICAL ERROR INITIALIZING FIREBASE ADMIN SDK:");
-  if (error.code === 'MODULE_NOT_FOUND' && error.message.includes('../service-account-key.json')) { // Adjusted path for error message
-    console.error("  Reason: The 'service-account-key.json' file was not found. Expected at project root, path relative to script: ../service-account-key.json");
+  if (error.code === 'MODULE_NOT_FOUND' && error.message.includes('../../service-account-key.json')) { // Adjusted path for error message
+    console.error("  Reason: The 'service-account-key.json' file was not found. Expected at project root, path relative to script: ../../service-account-key.json");
     console.error("  ACTION: Please download your service account key from your Firebase project settings and place it in the project root, naming it 'service-account-key.json'.");
   } else if (error.message.includes("Service account key is missing 'project_id'")) {
     console.error("  Reason: The 'service-account-key.json' file seems to be invalid or incomplete (missing 'project_id').");
@@ -258,13 +258,13 @@ const mockSalesHistory: (Omit<SalesHistoryDocument, 'id' | 'date' | 'deletedAt'>
   companyId: MOCK_COMPANY_ID,
   productId: MOCK_PRODUCT_IDS[s.skuForLookup],
   sku: s.skuForLookup,
-  orderId: s.orderId || null,
+  orderId: s.orderId || null, // Convert undefined to null here
   quantity: s.quantity,
   unitPrice: s.unitPrice,
   revenue: s.revenue,
   costAtTimeOfSale: s.costAtTimeOfSale,
   channel: s.channel,
-  customerId: s.customerId || null,
+  customerId: s.customerId || null, // Convert undefined to null here
   date: s.date,
 }));
 
@@ -351,14 +351,29 @@ const mockChatSessionsRaw: (Omit<ChatSessionDocument, 'id' | 'companyId' | 'crea
   },
 ];
 
-const mockChatSessions: (Omit<ChatSessionDocument, 'id' | 'createdAt' | 'lastMessageAt'> & {id: string, createdAt: Date, lastMessageAt: Date})[] = mockChatSessionsRaw.map((chat, index) => ({
+// Corrected mockChatSessions transformation
+const mockChatSessions: (Omit<ChatSessionDocument, 'id' | 'createdAt' | 'lastMessageAt' | 'messages'> & {id: string, createdAt: Date, lastMessageAt: Date, messages: ChatMessage[]})[] = mockChatSessionsRaw.map((chat, index) => {
+  let messageTime = Date.now() - 120000; // 2 minutes ago for first message
+  const processedMessages: ChatMessage[] = chat.messages.map((rawMsg, msgIndex) => {
+      messageTime += (msgIndex * 5000); // Stagger messages by 5 seconds
+      return {
+          ...rawMsg, // rawMsg is Omit<ChatMessage, 'timestamp'>
+          timestamp: AdminTimestamp.fromDate(new Date(messageTime)) // Assign a Firestore Timestamp
+      };
+  });
+
+  return {
     id: `chat_seed_${String(index + 1).padStart(3, '0')}`,
     companyId: MOCK_COMPANY_ID,
-    ...chat,
-    messages: chat.messages.map(msg => ({...msg, timestamp: msg.timestamp instanceof Date ? AdminTimestamp.fromDate(msg.timestamp) : msg.timestamp })),
-    createdAt: new Date(Date.now() - (index + 2) * 60 * 60 * 1000),
-    lastMessageAt: new Date(Date.now() - (index + 1) * 59 * 60 * 1000),
-}));
+    userId: chat.userId,
+    title: chat.title,
+    contextSnapshot: chat.contextSnapshot,
+    messages: processedMessages, // messages now have Firestore Timestamps
+    createdAt: new Date(Date.now() - (index + 2) * 60 * 60 * 1000), // This is a JS Date
+    lastMessageAt: new Date(Date.now() - (index + 1) * 59 * 60 * 1000), // This is a JS Date
+  };
+});
+
 
 // Mock Daily Aggregate Data
 const mockDailyAggregate: Omit<DailyAggregateDocument, 'id' | 'date' | 'lastCalculated'> & { date: Date; lastCalculated: Date } = {
@@ -482,9 +497,14 @@ async function seedDatabase() {
   console.log(`Seeding ${mockChatSessions.length} chat sessions...`);
   mockChatSessions.forEach(chat => {
     const chatRef = db.collection('chat_sessions').doc(chat.id);
+    // chat.messages already contains Firestore Timestamps
+    // chat.createdAt and chat.lastMessageAt are JS Dates and need conversion
     batch.set(chatRef, {
-        ...chat,
-        messages: chat.messages.map(m => ({...m, timestamp: m.timestamp instanceof Date ? AdminTimestamp.fromDate(m.timestamp) : m.timestamp })),
+        companyId: chat.companyId, // Ensure all necessary fields are present
+        userId: chat.userId,
+        title: chat.title,
+        contextSnapshot: chat.contextSnapshot,
+        messages: chat.messages, // These are already Firestore Timestamps
         createdAt: AdminTimestamp.fromDate(chat.createdAt),
         lastMessageAt: AdminTimestamp.fromDate(chat.lastMessageAt)
     });
