@@ -22,9 +22,12 @@ if (admin.apps.length > 0 && admin.app().options && admin.app().options.projectI
 } else {
   console.error("--------------------------------------------------------------------");
   console.error("[Seed Script] CRITICAL ERROR: Firebase Admin SDK does not seem to be initialized by admin.ts, or project ID is not readable from the SDK instance.");
-  console.error(`  Admin apps length: ${admin.apps.length}`);
-  if(admin.apps.length > 0) {
-    console.error(`  Default app options:`, admin.app().options);
+  if (admin.apps.length === 0) {
+    console.error("  Reason: admin.apps.length is 0. The SDK is not initialized.");
+  } else if (!admin.app().options) {
+    console.error("  Reason: admin.app().options is undefined.");
+  } else if (!admin.app().options.projectId) {
+    console.error("  Reason: admin.app().options.projectId is undefined/empty.");
   }
   console.error("  This usually means that 'src/lib/firebase/admin.ts' failed to initialize.");
   console.error("  Please check the server startup logs for errors from 'admin.ts' related to 'service-account-key.json'.");
@@ -369,6 +372,34 @@ const mockDailyAggregate: Omit<DailyAggregateDocument, 'id' | 'date' | 'lastCalc
 
 
 async function seedDatabase() {
+  console.log(`[Seed Script] Using Project ID for Firestore operations: ${sdkProjectId}`);
+  if (!sdkProjectId) {
+    console.error("[Seed Script] CRITICAL: Project ID is undefined. Cannot proceed with Firestore operations.");
+    process.exit(1);
+  }
+
+  try {
+    // Diagnostic: Attempt a single simple write
+    console.log(`[Seed Script] Attempting a diagnostic write to project ${sdkProjectId}...`);
+    const diagnosticDocRef = db.collection('_seed_diagnostics').doc(`test_write_${Date.now()}`);
+    await diagnosticDocRef.set({ 
+        timestamp: FieldValue.serverTimestamp(), 
+        message: `Seed script diagnostic write for project ${sdkProjectId}`,
+        sdkInitializedProjectId: sdkProjectId 
+    });
+    console.log(`[Seed Script] Diagnostic write SUCCESSFUL to collection '_seed_diagnostics'.`);
+  } catch (diagError: any) {
+    console.error(`[Seed Script] CRITICAL ERROR during diagnostic write:`, diagError);
+    console.error("  This means basic Firestore write operations are failing.");
+    console.error("  Please re-verify:");
+    console.error("  1. Cloud Firestore API is enabled in Google Cloud Console for project:", sdkProjectId);
+    console.error("  2. The service account has 'Cloud Datastore User' or 'Editor' role in IAM for project:", sdkProjectId);
+    console.error("  3. The project has an active billing account linked.");
+    console.error("  Details from diagnostic error:", diagError.details);
+    console.error("  Code:", diagError.code);
+    process.exit(1);
+  }
+
   console.log("Connecting to Firestore...");
   const batch = db.batch();
 
@@ -510,3 +541,6 @@ seedDatabase().catch(error => {
   console.error("[Seed Script] Unhandled error during seeding:", error);
   process.exit(1);
 });
+
+
+    
