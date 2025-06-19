@@ -20,39 +20,41 @@ interface DashboardKPIs {
 
 export async function GET(request: NextRequest) {
   let companyId: string;
+  let userId: string; 
   try {
-    ({ companyId } = await verifyAuthToken(request));
+    const authResult = await verifyAuthToken(request);
+    companyId = authResult.companyId;
+    userId = authResult.uid;
+    console.log(`[Analytics Dashboard API] Authenticated user ${userId} for company ${companyId}`);
   } catch (authError: any) {
+    console.error("[Analytics Dashboard API] Authentication error:", authError.message);
     return NextResponse.json({ error: authError.message || 'Authentication failed' }, { status: 401 });
   }
 
   try {
-    // --- CONCEPTUAL: Fetch from pre-aggregated data ---
-    // In a production system, these KPIs would ideally be read from a
-    // pre-aggregated document (e.g., 'daily_aggregates' collection)
-    // updated by a scheduled Cloud Function.
-
-    const todayStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const todayForAggId = new Date();
+    todayForAggId.setUTCHours(0,0,0,0); // Use UTC start of day for ID consistency
+    const todayStr = todayForAggId.toISOString().split('T')[0]; // YYYY-MM-DD in UTC
     const aggregateDocId = `${companyId}_${todayStr}`;
     const aggregateDocRef = db.collection('daily_aggregates').doc(aggregateDocId);
     
-    console.time(`fetchAggregateDashboardData-${companyId}`);
+    console.log(`[Analytics Dashboard API] Attempting to fetch aggregate: ${aggregateDocId}`);
     const aggregateDocSnap = await aggregateDocRef.get();
-    console.timeEnd(`fetchAggregateDashboardData-${companyId}`);
 
     if (aggregateDocSnap.exists) {
+      console.log(`[Analytics Dashboard API] Aggregate document ${aggregateDocId} found.`);
       const aggData = aggregateDocSnap.data() as DailyAggregateDocument;
       const kpis: DashboardKPIs = {
         totalInventoryValue: aggData.totalInventoryValue || 0,
         lowStockItemsCount: aggData.lowStockItemsCount || 0,
         outOfStockItemsCount: aggData.outOfStockItemsCount || 0,
-        pendingOrdersCount: 0, // This would also come from aggregates or a separate quick query
+        pendingOrdersCount: 0, 
         todaysRevenue: aggData.todaysRevenue || 0,
         inventoryValueByCategory: aggData.inventoryValueByCategory || {},
-        lastUpdated: (aggData.lastCalculated as AdminTimestamp)?.toDate().toISOString() || new Date().toISOString(),
+        lastUpdated: (aggData.lastCalculated as AdminTimestamp)?.toDate()?.toISOString() || new Date().toISOString(),
+        turnoverRate: aggData.turnoverRate,
       };
       
-      // Quick fetch for pending orders as it's usually dynamic
       const pendingOrdersSnapshot = await db.collection('orders')
                                           .where('companyId', '==', companyId)
                                           .where('type', '==', 'purchase')
@@ -61,17 +63,17 @@ export async function GET(request: NextRequest) {
                                           .count()
                                           .get();
       kpis.pendingOrdersCount = pendingOrdersSnapshot.data().count;
-
+      console.log(`[Analytics Dashboard API] KPIs from aggregate (pending orders fetched live):`, kpis);
       return NextResponse.json({ data: kpis, source: 'aggregate' });
     } else {
-      // --- FALLBACK: Calculate live if aggregate not found (costly for production) ---
-      console.warn(`Aggregate document ${aggregateDocId} not found. Calculating live KPIs for dashboard for company ${companyId} (this can be slow).`);
+      console.warn(`[Analytics Dashboard API] Aggregate document ${aggregateDocId} not found. Calculating live KPIs for company ${companyId}. This can be slow and might indicate a missing daily aggregation job or date mismatch (UTC vs local).`);
       
       console.time(`calculateLiveDashboardData-${companyId}`);
       const inventorySnapshot = await db.collection('inventory')
                                         .where('companyId', '==', companyId)
-                                        .where('deletedAt', '==', null) // Assuming soft deletes
+                                        .where('deletedAt', '==', null) 
                                         .get();
+      console.log(`[Analytics Dashboard API] Fetched ${inventorySnapshot.docs.length} inventory items for live calculation.`);
       
       let totalInventoryValue = 0;
       let lowStockItemsCount = 0;
@@ -83,7 +85,7 @@ export async function GET(request: NextRequest) {
         const quantity = typeof item.quantity === 'number' ? item.quantity : 0;
         const unitCost = typeof item.unitCost === 'number' ? item.unitCost : 0;
         const reorderPoint = typeof item.reorderPoint === 'number' ? item.reorderPoint : 0;
-        const category = typeof item.category === 'string' ? item.category : 'Uncategorized';
+        const category = typeof item.category === 'string' && item.category ? item.category : 'Uncategorized';
         const itemValue = quantity * unitCost;
 
         totalInventoryValue += itemValue;
@@ -103,17 +105,18 @@ export async function GET(request: NextRequest) {
                                             .get();
       const pendingOrdersCount = pendingOrdersSnapshot.data().count;
 
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(today.getDate() + 1);
+      const todayStartForSales = new Date(); // Use local server time for "today's" sales
+      todayStartForSales.setHours(0, 0, 0, 0);
+      const tomorrowStartForSales = new Date(todayStartForSales);
+      tomorrowStartForSales.setDate(todayStartForSales.getDate() + 1);
 
       const salesTodaySnapshot = await db.collection('sales_history')
                                           .where('companyId', '==', companyId)
-                                          .where('date', '>=', AdminTimestamp.fromDate(today))
-                                          .where('date', '<', AdminTimestamp.fromDate(tomorrow))
+                                          .where('date', '>=', AdminTimestamp.fromDate(todayStartForSales))
+                                          .where('date', '<', AdminTimestamp.fromDate(tomorrowStartForSales))
                                           .where('deletedAt', '==', null)
                                           .get();
+      console.log(`[Analytics Dashboard API] Fetched ${salesTodaySnapshot.docs.length} sales records for today.`);
       let todaysRevenue = 0;
       salesTodaySnapshot.docs.forEach(doc => {
         const sale = doc.data() as SalesHistoryDocument;
@@ -129,20 +132,20 @@ export async function GET(request: NextRequest) {
         todaysRevenue,
         inventoryValueByCategory,
         lastUpdated: new Date().toISOString(),
+        // turnoverRate would typically be calculated separately, not usually live on dashboard due to complexity
       };
-
+      console.log(`[Analytics Dashboard API] KPIs from live calculation:`, kpis);
       return NextResponse.json({ data: kpis, source: 'live_calculation' });
     }
   } catch (error: any) {
-    console.error(`Error fetching dashboard analytics for company ${companyId}:`, error);
+    console.error(`[Analytics Dashboard API] UNHANDLED EXCEPTION for company ${companyId}:`, error);
+    const errorMessage = `Internal server error processing dashboard analytics: ${error.message || 'Unknown error'}`;
     if (error.code === 'failed-precondition') {
         return NextResponse.json({ 
             error: 'A Firestore query failed, possibly due to a missing index. Please check server logs for a link to create the index.',
             details: error.message 
         }, { status: 500 });
     }
-    const message = error.message || 'Failed to fetch dashboard analytics.';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: errorMessage, details: error.stack }, { status: 500 });
   }
 }
-

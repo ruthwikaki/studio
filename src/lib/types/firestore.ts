@@ -276,6 +276,7 @@ export interface ForecastDocument {
   historicalDataUsedSummary?: string; // e.g., "Sales from YYYY-MM-DD to YYYY-MM-DD (90 data points)"
   notes?: string;
   createdBy?: string; // UID or system identifier
+  jobId?: string; // ID of the job_queue document that generated this forecast
 }
 
 // --------------------
@@ -378,9 +379,9 @@ export interface ChatMessage {
 }
 
 export interface ChatSessionDocument {
-  id: string; 
+  id: string;
   companyId: string;
-  userId: string; 
+  userId: string;
   messages: ChatMessage[];
   contextSnapshot?: string; // JSON string of the context provided to the AI for this session/turn
   createdAt: Timestamp;
@@ -392,23 +393,20 @@ export interface ChatSessionDocument {
 // --------------------
 // Analytics Reports / Aggregates Collection
 // --------------------
-// Renamed AnalyticsDocument to DailyAggregateDocument for clarity
 export interface DailyAggregateDocument {
-    id: string; // e.g., daily_report_companyId_YYYY-MM-DD
+    id: string; // e.g., {companyId}_{YYYY-MM-DD}
     companyId: string;
-    date: Timestamp; // The date this report pertains to
+    date: Timestamp; // The date this report pertains to (start of day UTC)
     totalInventoryValue: number;
     lowStockItemsCount: number;
     outOfStockItemsCount: number;
-    todaysRevenue?: number; // If it's a daily report
-    turnoverRate?: number; // Could be calculated and stored
-    // Add other KPIs as needed
-    // Example of category-based aggregation
+    todaysRevenue?: number; // Revenue for this specific day
     inventoryValueByCategory?: Record<string, number>;
     salesByProduct?: Record<string, { quantity: number; revenue: number }>;
     // ---
-    lastCalculated: Timestamp; // When this report was generated/updated
-    generatedBy?: string; // UID of user or 'system_aggregation_job'
+    lastCalculated: Timestamp; // When this aggregate was last calculated/updated
+    generatedBy?: string; // 'system_aggregation_job' or UID if manually triggered
+    turnoverRate?: number; // Can be calculated and stored here periodically
 }
 
 // --------------------
@@ -422,10 +420,10 @@ export interface CounterDocument {
 // --------------------
 // Notifications Collection
 // --------------------
-export type NotificationType = 
-  | 'low_stock' 
-  | 'order_status_changed' 
-  | 'document_processed' 
+export type NotificationType =
+  | 'low_stock'
+  | 'order_status_changed'
+  | 'document_processed'
   | 'supplier_score_updated'
   | 'new_forecast_available'
   | 'job_completed' // For background jobs
@@ -449,12 +447,12 @@ export interface NotificationDocument {
 // --------------------
 // Activity Logs Collection
 // --------------------
-export type ActivityActionType = 
+export type ActivityActionType =
   | 'item_created' | 'item_updated' | 'item_deleted' | 'item_soft_deleted'
   | 'order_created' | 'order_status_updated' | 'order_deleted' | 'order_soft_deleted'
   | 'document_uploaded' | 'document_processed' | 'document_approved' | 'document_deleted' | 'document_soft_deleted'
   | 'supplier_created' | 'supplier_updated' | 'supplier_score_recalculated' | 'supplier_deleted' | 'supplier_soft_deleted'
-  | 'forecast_requested' | 'forecast_generated' // Changed from forecast_generated
+  | 'forecast_requested' | 'forecast_generated'
   | 'job_created' | 'job_status_updated'
   | 'user_login' | 'user_logout' // Example auth events
   | 'settings_changed';
@@ -488,11 +486,20 @@ export interface UserCacheDocument {
 // --------------------
 // Job Queue Collection (for background processing)
 // --------------------
-export type JobType = 
+export type ModelType = // Explicitly re-adding as it's used in job payload
+  | "SIMPLE_MOVING_AVERAGE"
+  | "EXPONENTIAL_SMOOTHING"
+  | "SEASONAL_DECOMPOSITION"
+  | "AI_PATTERN_RECOGNITION"
+  | "REGRESSION_ANALYSIS"
+  | "ENSEMBLE_COMBINED";
+
+export type JobType =
     | 'generate_forecast'
-    | 'generate_report'
+    | 'generate_report' // e.g. daily/weekly summary reports
     | 'bulk_import_inventory'
-    | 'document_ocr_extraction'; // If OCR/extraction is also offloaded
+    | 'document_ocr_extraction'
+    | 'recalculate_supplier_scores'; // Example
 
 export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'retrying';
 
@@ -507,7 +514,7 @@ export interface JobQueueDocument<T = any> {
     updatedAt: Timestamp;
     startedAt?: Timestamp;
     completedAt?: Timestamp;
-    result?: any; // Store successful result summary or link
+    result?: any; // Store successful result summary or link (e.g., to generated forecast ID)
     error?: string; // Store error message if failed
     retryCount?: number;
     maxRetries?: number;
@@ -518,7 +525,7 @@ export interface JobQueueDocument<T = any> {
 export interface GenerateForecastJobPayload {
     sku: string;
     seasonalityFactors?: string;
-    modelType: string;
+    modelType: ModelType; // Using the explicitly defined ModelType
     // other relevant parameters from ForecastDemandInput
 }
 

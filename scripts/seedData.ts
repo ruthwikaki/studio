@@ -6,7 +6,8 @@ import type { Timestamp as AdminTimestamp } from 'firebase-admin/firestore';
 import type {
   CompanyDocument, UserDocument, ProductDocument, InventoryStockDocument,
   SupplierDocument, OrderDocument, SalesHistoryDocument, ForecastDocument,
-  DocumentMetadata, ChatSessionDocument, ChatMessage, OrderStatus, OrderItem
+  DocumentMetadata, ChatSessionDocument, ChatMessage, OrderStatus, OrderItem,
+  DailyAggregateDocument // Added DailyAggregateDocument
 } from '../src/lib/types/firestore'; // These types use firebase/firestore.Timestamp
 
 // --- Firebase Admin SDK Initialization ---
@@ -28,6 +29,7 @@ try {
   process.exit(1); // Exit if SDK cannot be initialized
 }
 const db = admin.firestore();
+const FieldValue = admin.firestore.FieldValue; // For serverTimestamp
 // ------------------------------------------------------------------
 
 
@@ -79,7 +81,7 @@ const mockProductsRaw: (Omit<ProductDocument, 'id' | 'companyId' | 'createdAt' |
 
 const mockProducts: (Omit<ProductDocument, 'id' | 'createdAt' | 'lastUpdated'> & {id: string, createdAt: Date, lastUpdated: Date})[] = mockProductsRaw.map((p, index) => {
   const id = `prod_seed_${String(index + 1).padStart(3, '0')}`;
-  MOCK_PRODUCT_IDS[p.sku] = id;
+  MOCK_PRODUCT_IDS[p.sku] = id; // Store the generated ID
   return {
     id,
     companyId: MOCK_COMPANY_ID,
@@ -90,19 +92,20 @@ const mockProducts: (Omit<ProductDocument, 'id' | 'createdAt' | 'lastUpdated'> &
 });
 
 
-const mockInventoryStockRaw: (Omit<InventoryStockDocument, 'id' | 'companyId' | 'lastUpdated'>)[] = [
-  { productId: MOCK_PRODUCT_IDS["LAPTOP001"], sku: "LAPTOP001", name: "15in Pro Laptop", quantity: 5, unitCost: 850.00, reorderPoint: 10, reorderQuantity: 5, location: "WH-A1", lowStockAlertSent: true, category: "Electronics", imageUrl: "https://placehold.co/300x300.png?text=Laptop" },
-  { productId: MOCK_PRODUCT_IDS["MOUSE002"], sku: "MOUSE002", name: "Wireless Ergonomic Mouse", quantity: 50, unitCost: 15.50, reorderPoint: 20, reorderQuantity: 25, location: "WH-A2", lowStockAlertSent: false, category: "Electronics", imageUrl: "https://placehold.co/300x300.png?text=Mouse" },
-  { productId: MOCK_PRODUCT_IDS["KEYB003"], sku: "KEYB003", name: "Mechanical Keyboard", quantity: 2, unitCost: 42.00, reorderPoint: 5, reorderQuantity: 5, location: "WH-B1", lowStockAlertSent: true, category: "Electronics", imageUrl: "https://placehold.co/300x300.png?text=Keyboard" },
-  { productId: MOCK_PRODUCT_IDS["MONITOR01"], sku: "MONITOR01", name: "27in 4K Monitor", quantity: 0, unitCost: 220.00, reorderPoint: 3, reorderQuantity: 3, location: "WH-C1", lowStockAlertSent: true, category: "Electronics", imageUrl: "https://placehold.co/300x300.png?text=Monitor" },
-  { productId: MOCK_PRODUCT_IDS["TSHIRT001"], sku: "TSHIRT001", name: "Organic Cotton T-Shirt", quantity: 150, unitCost: 8.00, reorderPoint: 50, reorderQuantity: 75, location: "WH-D1", lowStockAlertSent: false, category: "Apparel", imageUrl: "https://placehold.co/300x300.png?text=TShirt" },
-  { productId: MOCK_PRODUCT_IDS["COFFEE001"], sku: "COFFEE001", name: "Premium Coffee Beans 1kg", quantity: 75, unitCost: 10.50, reorderPoint: 30, reorderQuantity: 50, location: "WH-E1", lowStockAlertSent: false, category: "Groceries", imageUrl: "https://placehold.co/300x300.png?text=Coffee" },
-  { productId: MOCK_PRODUCT_IDS["BOOK001"], sku: "BOOK001", name: "Supply Chain Management Basics", quantity: 20, unitCost: 20.00, reorderPoint: 10, reorderQuantity: 10, location: "WH-F1", lowStockAlertSent: false, category: "Books", imageUrl: "https://placehold.co/300x300.png?text=Book" },
+const mockInventoryStockRaw: (Omit<InventoryStockDocument, 'id' | 'companyId' | 'lastUpdated' | 'productId'>)[] = [
+  { sku: "LAPTOP001", name: "15in Pro Laptop", quantity: 5, unitCost: 850.00, reorderPoint: 10, reorderQuantity: 5, location: "WH-A1", lowStockAlertSent: true, category: "Electronics", imageUrl: "https://placehold.co/300x300.png?text=Laptop" },
+  { sku: "MOUSE002", name: "Wireless Ergonomic Mouse", quantity: 50, unitCost: 15.50, reorderPoint: 20, reorderQuantity: 25, location: "WH-A2", lowStockAlertSent: false, category: "Electronics", imageUrl: "https://placehold.co/300x300.png?text=Mouse" },
+  { sku: "KEYB003", name: "Mechanical Keyboard", quantity: 2, unitCost: 42.00, reorderPoint: 5, reorderQuantity: 5, location: "WH-B1", lowStockAlertSent: true, category: "Electronics", imageUrl: "https://placehold.co/300x300.png?text=Keyboard" },
+  { sku: "MONITOR01", name: "27in 4K Monitor", quantity: 0, unitCost: 220.00, reorderPoint: 3, reorderQuantity: 3, location: "WH-C1", lowStockAlertSent: true, category: "Electronics", imageUrl: "https://placehold.co/300x300.png?text=Monitor" },
+  { sku: "TSHIRT001", name: "Organic Cotton T-Shirt", quantity: 150, unitCost: 8.00, reorderPoint: 50, reorderQuantity: 75, location: "WH-D1", lowStockAlertSent: false, category: "Apparel", imageUrl: "https://placehold.co/300x300.png?text=TShirt" },
+  { sku: "COFFEE001", name: "Premium Coffee Beans 1kg", quantity: 75, unitCost: 10.50, reorderPoint: 30, reorderQuantity: 50, location: "WH-E1", lowStockAlertSent: false, category: "Groceries", imageUrl: "https://placehold.co/300x300.png?text=Coffee" },
+  { sku: "BOOK001", name: "Supply Chain Management Basics", quantity: 20, unitCost: 20.00, reorderPoint: 10, reorderQuantity: 10, location: "WH-F1", lowStockAlertSent: false, category: "Books", imageUrl: "https://placehold.co/300x300.png?text=Book" },
 ];
 
 const mockInventoryStock: (Omit<InventoryStockDocument, 'id' | 'lastUpdated'> & {id: string, lastUpdated: Date})[] = mockInventoryStockRaw.map((inv, index) => ({
   id: `inv_stock_seed_${String(index + 1).padStart(3, '0')}`,
   companyId: MOCK_COMPANY_ID,
+  productId: MOCK_PRODUCT_IDS[inv.sku], // Use the stored product ID
   ...inv,
   lastUpdated: new Date(),
 }));
@@ -148,7 +151,6 @@ const mockSuppliers: (Omit<SupplierDocument, 'id' | 'createdAt' | 'lastUpdated'>
   lastUpdated: new Date(),
 }));
 
-// Define a type for raw order data that uses JS Date for temporary storage
 type MockOrderRawItem = Omit<OrderDocument, 'id' | 'companyId' | 'createdAt' | 'lastUpdated' | 'orderDate' | 'expectedDate' | 'actualDeliveryDate'> & {
   orderDate: Date;
   expectedDate?: Date;
@@ -156,10 +158,10 @@ type MockOrderRawItem = Omit<OrderDocument, 'id' | 'companyId' | 'createdAt' | '
 };
 
 const mockOrdersRaw: MockOrderRawItem[] = [
-  { // Purchase Order 1
+  { 
     orderNumber: 'PO-2024-SEED-001',
     type: 'purchase',
-    supplierId: mockSuppliers[0].id, // Use the ID from the already created mockSuppliers
+    supplierId: mockSuppliers[0].id, 
     items: [
       { productId: MOCK_PRODUCT_IDS["LAPTOP001"], sku: 'LAPTOP001', name: '15in Pro Laptop', quantity: 10, unitPrice: 845.00, totalCost: 8450.00 },
       { productId: MOCK_PRODUCT_IDS["MONITOR01"], sku: 'MONITOR01', name: '27in 4K Monitor', quantity: 5, unitPrice: 215.00, totalCost: 1075.00 },
@@ -171,7 +173,7 @@ const mockOrdersRaw: MockOrderRawItem[] = [
     actualDeliveryDate: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
     createdBy: MOCK_USER_ID_MANAGER,
   },
-  { // Sales Order 1
+  { 
     orderNumber: 'SO-2024-SEED-001',
     type: 'sales',
     customerId: 'cust_retail_001',
@@ -182,13 +184,11 @@ const mockOrdersRaw: MockOrderRawItem[] = [
     totalAmount: 169.97,
     status: 'completed' as OrderStatus,
     orderDate: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
-    // No expectedDate for this sales order for variety
     actualDeliveryDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
     createdBy: MOCK_USER_ID_MANAGER,
   },
 ];
 
-// Define a type for the processed mockOrders array that uses JS Date for temporary storage
 type MockOrderProcessed = Omit<OrderDocument, 'id' | 'createdAt' | 'lastUpdated' | 'orderDate' | 'expectedDate' | 'actualDeliveryDate'> & {
   id: string;
   orderDate: Date;
@@ -201,53 +201,57 @@ type MockOrderProcessed = Omit<OrderDocument, 'id' | 'createdAt' | 'lastUpdated'
 const mockOrders: MockOrderProcessed[] = mockOrdersRaw.map((o, index) => ({
   id: `ord_seed_${String(index + 1).padStart(3, '0')}`,
   companyId: MOCK_COMPANY_ID,
-  ...o, // Spread properties from MockOrderRawItem
-  // Explicitly keep JS Dates here; conversion to Timestamp happens in batch.set
+  ...o,
   orderDate: o.orderDate, 
   expectedDate: o.expectedDate,
   actualDeliveryDate: o.actualDeliveryDate,
-  // For mock purposes, set createdAt to orderDate and lastUpdated to delivery or orderDate
   createdAt: o.orderDate,
   lastUpdated: o.actualDeliveryDate || o.orderDate,
 }));
 
 
-const mockSalesHistoryRaw: (Omit<SalesHistoryDocument, 'id' | 'companyId' | 'date'> & {orderId?: string, date: Date})[] = [
-  { productId: MOCK_PRODUCT_IDS["MOUSE002"], sku: "MOUSE002", orderId: mockOrders[1].id, date: mockOrders[1].orderDate, quantity: 2, unitPrice: 39.99, revenue: 79.98, channel: 'Online Store', customerId: 'cust_retail_001' },
-  { productId: MOCK_PRODUCT_IDS["KEYB003"], sku: "KEYB003", orderId: mockOrders[1].id, date: mockOrders[1].orderDate, quantity: 1, unitPrice: 89.99, revenue: 89.99, channel: 'Online Store', customerId: 'cust_retail_001' },
-  { productId: MOCK_PRODUCT_IDS["LAPTOP001"], sku: "LAPTOP001", date: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000), quantity: 1, unitPrice: 1299.99, revenue: 1299.99, channel: 'Direct Sale' },
-  { productId: MOCK_PRODUCT_IDS["TSHIRT001"], sku: "TSHIRT001", date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), quantity: 10, unitPrice: 24.99, revenue: 249.90, channel: 'Retail POS' },
-  { productId: MOCK_PRODUCT_IDS["TSHIRT001"], sku: "TSHIRT001", date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), quantity: 5, unitPrice: 24.99, revenue: 124.95, channel: 'Online Store' },
+const mockSalesHistoryRaw: (Omit<SalesHistoryDocument, 'id' | 'companyId' | 'date' | 'productId'> & {skuForLookup: string, orderId?: string, date: Date})[] = [
+  { skuForLookup: "MOUSE002", orderId: mockOrders[1].id, date: mockOrders[1].orderDate, quantity: 2, unitPrice: 39.99, revenue: 79.98, costAtTimeOfSale: 15.50 * 2, channel: 'Online Store', customerId: 'cust_retail_001' },
+  { skuForLookup: "KEYB003", orderId: mockOrders[1].id, date: mockOrders[1].orderDate, quantity: 1, unitPrice: 89.99, revenue: 89.99, costAtTimeOfSale: 42.00 * 1, channel: 'Online Store', customerId: 'cust_retail_001' },
+  { skuForLookup: "LAPTOP001", date: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000), quantity: 1, unitPrice: 1299.99, revenue: 1299.99, costAtTimeOfSale: 850.00 * 1, channel: 'Direct Sale' },
+  { skuForLookup: "TSHIRT001", date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), quantity: 10, unitPrice: 24.99, revenue: 249.90, costAtTimeOfSale: 8.00 * 10, channel: 'Retail POS' },
+  { skuForLookup: "TSHIRT001", date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), quantity: 5, unitPrice: 24.99, revenue: 124.95, costAtTimeOfSale: 8.00 * 5, channel: 'Online Store' },
 ];
 
 const mockSalesHistory: (Omit<SalesHistoryDocument, 'id' | 'date'> & {id: string, date: Date})[] = mockSalesHistoryRaw.map((s, index) => ({
   id: `sh_seed_${String(index + 1).padStart(3, '0')}`,
   companyId: MOCK_COMPANY_ID,
-  ...s,
+  productId: MOCK_PRODUCT_IDS[s.skuForLookup],
+  sku: s.skuForLookup,
+  orderId: s.orderId,
+  quantity: s.quantity,
+  unitPrice: s.unitPrice,
+  revenue: s.revenue,
+  costAtTimeOfSale: s.costAtTimeOfSale,
+  channel: s.channel,
+  customerId: s.customerId,
   date: s.date,
 }));
 
-const mockForecastsRaw: (Omit<ForecastDocument, 'id' | 'companyId' | 'generatedAt'>)[] = [
+const mockForecastsRaw: (Omit<ForecastDocument, 'id' | 'companyId' | 'generatedAt' | 'productId'> & {skuForLookup: string})[] = [
   {
-    productId: MOCK_PRODUCT_IDS["LAPTOP001"],
-    sku: 'LAPTOP001',
+    skuForLookup: 'LAPTOP001',
     modelType: 'AI_PATTERN_RECOGNITION',
     predictions: {
-      p30: { demand: 8, confidence: 'Medium', confidenceInterval: { lowerBound: 6, upperBound: 10 } },
-      p60: { demand: 15, confidence: 'Medium', confidenceInterval: { lowerBound: 12, upperBound: 18 } },
-      p90: { demand: 22, confidence: 'Low', confidenceInterval: { lowerBound: 17, upperBound: 27 } },
+      '30day': { demand: 8, confidence: 'Medium', confidenceInterval: { lowerBound: 6, upperBound: 10 } },
+      '60day': { demand: 15, confidence: 'Medium', confidenceInterval: { lowerBound: 12, upperBound: 18 } },
+      '90day': { demand: 22, confidence: 'Low', confidenceInterval: { lowerBound: 17, upperBound: 27 } },
     },
     accuracy: 85,
     createdBy: 'system_ai_process',
   },
   {
-    productId: MOCK_PRODUCT_IDS["MOUSE002"],
-    sku: 'MOUSE002',
+    skuForLookup: 'MOUSE002',
     modelType: 'EXPONENTIAL_SMOOTHING',
     predictions: {
-      p30: { demand: 40, confidence: 'High', confidenceInterval: { lowerBound: 35, upperBound: 45 } },
-      p60: { demand: 85, confidence: 'High', confidenceInterval: { lowerBound: 78, upperBound: 92 } },
-      p90: { demand: 120, confidence: 'Medium', confidenceInterval: { lowerBound: 110, upperBound: 130 } },
+      '30day': { demand: 40, confidence: 'High', confidenceInterval: { lowerBound: 35, upperBound: 45 } },
+      '60day': { demand: 85, confidence: 'High', confidenceInterval: { lowerBound: 78, upperBound: 92 } },
+      '90day': { demand: 120, confidence: 'Medium', confidenceInterval: { lowerBound: 110, upperBound: 130 } },
     },
     accuracy: 92,
     createdBy: 'system_ai_process',
@@ -257,7 +261,12 @@ const mockForecastsRaw: (Omit<ForecastDocument, 'id' | 'companyId' | 'generatedA
 const mockForecasts: (Omit<ForecastDocument, 'id' | 'generatedAt'> & {id: string, generatedAt: Date})[] = mockForecastsRaw.map((fc, index) => ({
     id: `fc_seed_${String(index + 1).padStart(3, '0')}`,
     companyId: MOCK_COMPANY_ID,
-    ...fc,
+    productId: MOCK_PRODUCT_IDS[fc.skuForLookup],
+    sku: fc.skuForLookup,
+    modelType: fc.modelType,
+    predictions: fc.predictions,
+    accuracy: fc.accuracy,
+    createdBy: fc.createdBy,
     generatedAt: new Date(),
 }));
 
@@ -270,7 +279,7 @@ const mockDocumentsRaw: (Omit<DocumentMetadata, 'id' | 'companyId' | 'uploadedAt
     status: 'processed',
     documentTypeHint: 'invoice', 
     extractedData: { documentType: "invoice", invoiceNumber: "INV-EP-789", totalAmount: 9525.00, vendorName: "ElectroParts Ltd." },
-    linkedOrderId: mockOrders[0].id, 
+    linkedPoId: mockOrders[0].id, 
     uploadedBy: MOCK_USER_ID_MANAGER,
     extractionConfidence: 0.95,
   },
@@ -302,7 +311,7 @@ const mockChatSessionsRaw: (Omit<ChatSessionDocument, 'id' | 'companyId' | 'crea
       { role: 'user', content: 'Which items are running low?' },
       { role: 'assistant', content: 'Currently, LAPTOP001 (5 units), KEYB003 (2 units), and MONITOR01 (0 units) are below their reorder points.' },
     ],
-    context: { loadedInventoryDataSummary: "Live Database Snapshot", currentFocusSKU: "LAPTOP001" },
+    contextSnapshot: `{"inventorySummary":{"totalItems":7,"totalValue":12345},"lowStockItems":[{"sku":"LAPTOP001","name":"15in Pro Laptop","quantity":5,"reorderPoint":10},{"sku":"KEYB003","name":"Mechanical Keyboard","quantity":2,"reorderPoint":5},{"sku":"MONITOR01","name":"27in 4K Monitor","quantity":0,"reorderPoint":3}]}`,
     title: 'Low Stock Inquiry',
   },
 ];
@@ -311,10 +320,35 @@ const mockChatSessions: (Omit<ChatSessionDocument, 'id' | 'createdAt' | 'lastMes
     id: `chat_seed_${String(index + 1).padStart(3, '0')}`,
     companyId: MOCK_COMPANY_ID,
     ...chat,
-    messages: chat.messages.map(msg => ({...msg, timestamp: admin.firestore.Timestamp.fromDate(new Date(Date.now() - (Math.random() * 3600 * 1000))) } as ChatMessage)), // Ensure ChatMessage type uses AdminTimestamp
+    messages: chat.messages.map(msg => ({...msg, timestamp: admin.firestore.Timestamp.fromDate(new Date(Date.now() - (Math.random() * 3600 * 1000))) } as ChatMessage)), 
     createdAt: new Date(Date.now() - (index + 2) * 60 * 60 * 1000),
     lastMessageAt: new Date(Date.now() - (index + 1) * 59 * 60 * 1000),
 }));
+
+// Mock Daily Aggregate Data
+const mockDailyAggregate: Omit<DailyAggregateDocument, 'id' | 'date' | 'lastCalculated'> & { date: Date; lastCalculated: Date } = {
+  companyId: MOCK_COMPANY_ID,
+  date: new Date(), // This will be today's date
+  totalInventoryValue: mockInventoryStock.reduce((sum, item) => sum + (item.quantity * item.unitCost), 0),
+  lowStockItemsCount: mockInventoryStock.filter(item => item.quantity <= item.reorderPoint && item.reorderPoint > 0).length,
+  outOfStockItemsCount: mockInventoryStock.filter(item => item.quantity === 0).length,
+  todaysRevenue: mockSalesHistory
+    .filter(sale => {
+        const saleDate = sale.date;
+        const today = new Date();
+        return saleDate.getUTCFullYear() === today.getUTCFullYear() &&
+               saleDate.getUTCMonth() === today.getUTCMonth() &&
+               saleDate.getUTCDate() === today.getUTCDate();
+    })
+    .reduce((sum, sale) => sum + sale.revenue, 0),
+  inventoryValueByCategory: mockInventoryStock.reduce((acc, item) => {
+    const category = item.category || 'Uncategorized';
+    acc[category] = (acc[category] || 0) + (item.quantity * item.unitCost);
+    return acc;
+  }, {} as Record<string, number>),
+  lastCalculated: new Date(),
+  generatedBy: 'seed_script',
+};
 
 
 async function seedDatabase() {
@@ -354,8 +388,6 @@ async function seedDatabase() {
   console.log(`Seeding ${mockOrders.length} orders...`);
   mockOrders.forEach(order => {
     const orderDocRef = db.collection('orders').doc(order.id);
-    // Construct the object for Firestore, ensuring all Date fields are converted to AdminTimestamp
-    // and optional fields are only added if they exist.
     const { expectedDate, actualDeliveryDate, ...restOfOrder } = order;
     
     const firestoreOrderData: any = {
@@ -413,6 +445,18 @@ async function seedDatabase() {
     });
   });
 
+  console.log(`Seeding daily aggregate for ${MOCK_COMPANY_ID}...`);
+  const todayForAggregate = new Date(); // Use UTC date for consistency
+  todayForAggregate.setUTCHours(0,0,0,0);
+  const aggregateDocId = `${MOCK_COMPANY_ID}_${todayForAggregate.toISOString().split('T')[0]}`;
+  const aggregateDocRef = db.collection('daily_aggregates').doc(aggregateDocId);
+  batch.set(aggregateDocRef, {
+    ...mockDailyAggregate,
+    date: admin.firestore.Timestamp.fromDate(todayForAggregate), // Set to start of current UTC day
+    lastCalculated: FieldValue.serverTimestamp(), // Use server timestamp
+  });
+
+
   try {
     await batch.commit();
     console.log("Batch commit successful. Database seeded.");
@@ -431,6 +475,10 @@ async function seedDatabase() {
     }
     return value;
   }, 2) + "\n  ...");
+  console.log("Daily Aggregate (for today):", JSON.stringify(mockDailyAggregate, (key, value) => {
+    if (value instanceof Date) return value.toISOString();
+    return value;
+  }, 2));
 
 
   console.log("\nSeeding complete. Data should be in your Firestore database.");
@@ -438,4 +486,3 @@ async function seedDatabase() {
 
 seedDatabase().catch(console.error);
     
-
