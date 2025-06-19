@@ -15,75 +15,80 @@ export async function GET(request: NextRequest) {
   }
 
   const { searchParams } = new URL(request.url);
-  const page = parseInt(searchParams.get('page') || '1');
   const limit = parseInt(searchParams.get('limit') || '10');
+  const startAfterDocId = searchParams.get('startAfter'); // For cursor-based pagination
   const searchTerm = searchParams.get('search');
   const reliabilityFilter = searchParams.get('reliability'); // e.g. "85-100"
   const leadTimeFilter = searchParams.get('leadTime'); // e.g. "0-7"
 
   try {
-    let query: admin.firestore.Query<admin.firestore.DocumentData> = db.collection('suppliers').where('companyId', '==', companyId);
+    let query: FirebaseFirestore.Query<FirebaseFirestore.DocumentData> = db.collection('suppliers').where('companyId', '==', companyId);
 
     if (searchTerm) {
-      // Basic prefix search on name. For "contains" or more advanced search, a dedicated search service is better.
       query = query.orderBy('name').startAt(searchTerm).endAt(searchTerm + '\uf8ff');
     }
 
     if (reliabilityFilter) {
-      const [minRel, maxRel] = reliabilityFilter.split('-').map(Number);
+      const [minRelStr, maxRelStr] = reliabilityFilter.split('-');
+      const minRel = parseInt(minRelStr, 10);
+      const maxRel = parseInt(maxRelStr, 10);
       if (!isNaN(minRel)) query = query.where('reliabilityScore', '>=', minRel);
       if (!isNaN(maxRel)) query = query.where('reliabilityScore', '<=', maxRel);
-      // Note: Firestore requires an orderBy for range filters if not the first orderBy.
-      // If searchTerm is also used, this might require a composite index or client-side filtering for complex scenarios.
-      // For now, if searchTerm is present, name is already ordered. If not, order by reliabilityScore.
-      if (!searchTerm) query = query.orderBy('reliabilityScore');
+      if (!searchTerm) query = query.orderBy('reliabilityScore', 'desc'); // Sort by reliability if not searching by name
     }
 
     if (leadTimeFilter) {
-      const [minLead, maxLead] = leadTimeFilter.split('-').map(Number);
-      if (leadTimeFilter.endsWith('+')) { // e.g. "15+"
-         if (!isNaN(minLead)) query = query.where('leadTimeDays', '>=', minLead);
-      } else {
-        if (!isNaN(minLead)) query = query.where('leadTimeDays', '>=', minLead);
-        if (!isNaN(maxLead)) query = query.where('leadTimeDays', '<=', maxLead);
+      const [minLeadStr, maxLeadPlusStr] = leadTimeFilter.split('-');
+      const minLead = parseInt(minLeadStr, 10);
+      const maxLead = parseInt(maxLeadPlusStr, 10); // Will be NaN if it's "15+"
+
+      if (!isNaN(minLead)) query = query.where('leadTimeDays', '>=', minLead);
+      if (!isNaN(maxLead)) { // if maxLead is a number
+        query = query.where('leadTimeDays', '<=', maxLead);
       }
-       if (!searchTerm && !reliabilityFilter) query = query.orderBy('leadTimeDays');
+      // If not searching or filtering by reliability, sort by leadTime
+      if (!searchTerm && !reliabilityFilter) query = query.orderBy('leadTimeDays');
     }
     
-    // Default sort if no other sorting is applied
     if (!searchTerm && !reliabilityFilter && !leadTimeFilter) {
         query = query.orderBy('name');
     }
 
-
-    const totalItemsSnapshot = await query.count().get();
-    const totalItems = totalItemsSnapshot.data().count;
-    const totalPages = Math.ceil(totalItems / limit);
-
-    const paginatedQuery = query.limit(limit).offset((page - 1) * limit);
-    const snapshot = await paginatedQuery.get();
+    if (startAfterDocId) {
+      const startAfterDoc = await db.collection('suppliers').doc(startAfterDocId).get();
+      if (startAfterDoc.exists) {
+        query = query.startAfter(startAfterDoc);
+      }
+    }
+    
+    const snapshot = await query.limit(limit).get();
     
     const suppliers: SupplierDocument[] = snapshot.docs.map(doc => {
       const data = doc.data();
       return {
         id: doc.id,
         ...data,
-        createdAt: (data.createdAt as AdminTimestamp)?.toDate().toISOString(),
-        lastUpdated: (data.lastUpdated as AdminTimestamp)?.toDate().toISOString(),
-        lastOrderDate: (data.lastOrderDate as AdminTimestamp)?.toDate().toISOString(),
+        createdAt: (data.createdAt as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
+        lastUpdated: (data.lastUpdated as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
+        lastOrderDate: data.lastOrderDate ? (data.lastOrderDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined,
       } as SupplierDocument;
     });
     
+    const nextCursor = snapshot.docs.length === limit ? snapshot.docs[snapshot.docs.length - 1].id : null;
+    
     return NextResponse.json({ 
         data: suppliers, 
-        pagination: { currentPage: page, pageSize: limit, totalItems, totalPages } 
+        pagination: { 
+            count: suppliers.length,
+            nextCursor
+        } 
     });
 
   } catch (error: any) {
     console.error('Error fetching suppliers:', error);
     if (error.code === 'failed-precondition') {
       return NextResponse.json({ 
-        error: 'Query requires an index. Please create the necessary composite index in Firestore.',
+        error: 'Query requires an index. Please create the necessary composite index in Firestore. Details: ' + error.message,
         details: error.message
       }, { status: 400 });
     }
@@ -113,19 +118,20 @@ export async function POST(request: NextRequest) {
     const { productsSuppliedSkus, ...newSupplierData } = validationResult.data;
     
     const productsSupplied: SupplierProductInfo[] = (productsSuppliedSkus || []).map(sku => ({
-        productId: sku, // Assuming SKU is product ID for now
+        productId: sku, 
         sku: sku,
-        name: `Product ${sku}`, // Placeholder name, ideally fetch or allow detailed entry
+        name: `Product ${sku}`, 
     }));
 
     const supplierDocRef = db.collection('suppliers').doc();
-    const fullSupplierData: Omit<SupplierDocument, 'id' | 'createdAt' | 'lastUpdated'> & { createdAt: FirebaseFirestore.FieldValue, lastUpdated: FirebaseFirestore.FieldValue, createdBy: string } = {
+    const fullSupplierData: Omit<SupplierDocument, 'id' | 'createdAt' | 'lastUpdated'> & { createdAt: FirebaseFirestore.FieldValue, lastUpdated: FirebaseFirestore.FieldValue, createdBy: string, lastUpdatedBy: string } = {
       companyId,
       createdBy: userId,
+      lastUpdatedBy: userId,
       ...newSupplierData,
-      leadTimeDays: newSupplierData.leadTimeDays ?? 0, // Ensure number or default
-      reliabilityScore: newSupplierData.reliabilityScore ?? 0,
-      moq: newSupplierData.moq ?? 0,
+      leadTimeDays: newSupplierData.leadTimeDays ?? 0,
+      reliabilityScore: newSupplierData.reliabilityScore ?? undefined, // Allow undefined if not set
+      moq: newSupplierData.moq ?? undefined,
       productsSupplied: productsSupplied,
       createdAt: FieldValue.serverTimestamp(),
       lastUpdated: FieldValue.serverTimestamp(),
@@ -138,8 +144,8 @@ export async function POST(request: NextRequest) {
     const responseSupplier = {
       id: createdDoc.id,
       ...createdData,
-      createdAt: (createdData?.createdAt as AdminTimestamp)?.toDate().toISOString(),
-      lastUpdated: (createdData?.lastUpdated as AdminTimestamp)?.toDate().toISOString(),
+      createdAt: (createdData?.createdAt as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
+      lastUpdated: (createdData?.lastUpdated as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
     } as SupplierDocument;
 
 

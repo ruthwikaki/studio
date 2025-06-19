@@ -14,8 +14,8 @@ export async function GET(request: NextRequest) {
   }
 
   const { searchParams } = new URL(request.url);
-  const page = parseInt(searchParams.get('page') || '1');
   const limit = parseInt(searchParams.get('limit') || '10');
+  const startAfterDocId = searchParams.get('startAfter'); // For cursor-based pagination
   const type = searchParams.get('type') as DocumentMetadata['documentTypeHint'];
   const status = searchParams.get('status') as DocumentStatus;
   const dateFrom = searchParams.get('dateFrom'); // ISO string
@@ -23,9 +23,9 @@ export async function GET(request: NextRequest) {
   const searchQuery = searchParams.get('search');
 
   try {
-    let query: admin.firestore.Query<admin.firestore.DocumentData> = db.collection('documents').where('companyId', '==', companyId);
+    let query: FirebaseFirestore.Query<FirebaseFirestore.DocumentData> = db.collection('documents').where('companyId', '==', companyId);
 
-    if (type && type !== 'auto_detect' && type !== 'unknown') { // Assuming 'auto_detect' and 'unknown' mean no specific type filter
+    if (type && type !== 'auto_detect' && type !== 'unknown') {
       query = query.where('documentTypeHint', '==', type);
     }
     if (status) {
@@ -35,50 +35,51 @@ export async function GET(request: NextRequest) {
       query = query.where('uploadedAt', '>=', AdminTimestamp.fromDate(new Date(dateFrom)));
     }
     if (dateTo) {
-      const toDate = new Date(dateTo);
-      toDate.setHours(23, 59, 59, 999);
-      query = query.where('uploadedAt', '<=', AdminTimestamp.fromDate(toDate));
+      const toDateObj = new Date(dateTo);
+      toDateObj.setHours(23, 59, 59, 999);
+      query = query.where('uploadedAt', '<=', AdminTimestamp.fromDate(toDateObj));
     }
     
-    // Search: Firestore doesn't support native full-text search on nested objects like extractedData.
-    // This search is simplified to fileName. For broader search, use a dedicated search service (e.g., Algolia, Elasticsearch).
     if (searchQuery) {
-        // Basic prefix search on fileName. 
         query = query.orderBy('fileName').startAt(searchQuery).endAt(searchQuery + '\uf8ff');
     } else {
-        query = query.orderBy('uploadedAt', 'desc'); // Default sort
+        query = query.orderBy('uploadedAt', 'desc');
     }
 
-
-    const totalItemsSnapshot = await query.count().get();
-    const totalItems = totalItemsSnapshot.data().count;
-    const totalPages = Math.ceil(totalItems / limit);
-
-    const paginatedQuery = query.limit(limit).offset((page - 1) * limit);
-    const snapshot = await paginatedQuery.get();
+    if (startAfterDocId) {
+      const startAfterDoc = await db.collection('documents').doc(startAfterDocId).get();
+      if (startAfterDoc.exists) {
+        query = query.startAfter(startAfterDoc);
+      }
+    }
+    
+    const snapshot = await query.limit(limit).get();
     
     const documents: Partial<DocumentMetadata>[] = snapshot.docs.map(doc => {
       const data = doc.data() as DocumentMetadata;
-      // Return a summary
       return {
         id: doc.id,
         fileName: data.fileName,
         fileType: data.fileType,
         status: data.status,
         documentTypeHint: data.documentTypeHint,
-        uploadedAt: (data.uploadedAt as AdminTimestamp)?.toDate().toISOString(),
-        processedAt: (data.processedAt as AdminTimestamp)?.toDate().toISOString(),
-        approvedAt: (data.approvedAt as AdminTimestamp)?.toDate().toISOString(),
-        // Simple summary of extracted data if available
+        uploadedAt: (data.uploadedAt as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
+        processedAt: data.processedAt ? (data.processedAt as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined,
+        approvedAt: data.approvedAt ? (data.approvedAt as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined,
         extractedDataSummary: data.extractedData ? 
-            `Type: ${data.extractedData.documentType}, Ref: ${data.extractedData.invoiceNumber || data.extractedData.poNumber || data.extractedData.transactionId || 'N/A'}, Total: ${data.extractedData.totalAmount || 'N/A'}` 
+            `Type: ${data.extractedData.documentType || 'N/A'}, Ref: ${data.extractedData.invoiceNumber || data.extractedData.poNumber || data.extractedData.transactionId || 'N/A'}, Total: ${data.extractedData.totalAmount || 'N/A'}` 
             : "Not Extracted",
       };
     });
     
+    const nextCursor = snapshot.docs.length === limit ? snapshot.docs[snapshot.docs.length - 1].id : null;
+    
     return NextResponse.json({ 
         data: documents, 
-        pagination: { currentPage: page, pageSize: limit, totalItems, totalPages } 
+        pagination: { 
+            count: documents.length,
+            nextCursor 
+        } 
     });
 
   } catch (error: any) {
