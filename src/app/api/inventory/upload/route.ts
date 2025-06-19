@@ -3,13 +3,10 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
-// import { getFirestoreAdmin, FieldValue } from 'firebase-admin/firestore'; // Placeholder
-// import { verifyAuthToken } from '@/lib/firebase/admin-auth'; // Placeholder
+import { db, FieldValue } from '@/lib/firebase/admin';
+import { verifyAuthToken } from '@/lib/firebase/admin-auth';
 import { analyzeInventoryFile, AnalyzeInventoryFileInput } from '@/ai/flows/fileAnalysis';
-import type { InventoryItemDocument } from '@/lib/types/firestore';
-
-// Placeholder for Firestore instance
-// const db = getFirestoreAdmin();
+import type { InventoryStockDocument } from '@/lib/types/firestore';
 
 interface ParsedInventoryItem {
   sku: string;
@@ -19,16 +16,22 @@ interface ParsedInventoryItem {
   reorderPoint: number;
   category?: string;
   description?: string;
+  reorderQuantity?: number;
+  location?: string;
+  imageUrl?: string;
   // Add other expected fields from CSV/Excel
 }
 
 export async function POST(request: NextRequest) {
-  // TODO: Implement Firebase Auth token verification
-  // const { uid } = await verifyAuthToken(request);
-  // if (!uid) {
-  //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  // }
-  const userId = "mockUserId"; // Replace with actual uid
+  let companyId: string, userId: string;
+  try {
+    const authResult = await verifyAuthToken(request);
+    companyId = authResult.companyId;
+    userId = authResult.uid;
+  } catch (authError: any) {
+    console.error("Auth error in inventory upload:", authError);
+    return NextResponse.json({ error: authError.message || 'Authentication failed.' }, { status: 401 });
+  }
 
   try {
     const formData = await request.formData();
@@ -41,86 +44,151 @@ export async function POST(request: NextRequest) {
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
-    let parsedData: ParsedInventoryItem[] = [];
+    let parsedItemsRaw: any[] = [];
 
     if (file.type === 'text/csv' || file.name.endsWith('.csv')) {
       const csvData = buffer.toString('utf-8');
-      const result = Papa.parse<ParsedInventoryItem>(csvData, {
+      const result = Papa.parse<any>(csvData, {
         header: true,
         skipEmptyLines: true,
-        dynamicTyping: true, // Automatically converts numbers, booleans
+        dynamicTyping: false, // Keep as strings, parse manually
       });
       if (result.errors.length > 0) {
         console.error('CSV Parsing errors:', result.errors);
         return NextResponse.json({ error: 'Failed to parse CSV file.', details: result.errors.map(e => e.message) }, { status: 400 });
       }
-      parsedData = result.data;
+      parsedItemsRaw = result.data;
     } else if (file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || file.name.endsWith('.xlsx')) {
       const workbook = XLSX.read(buffer, { type: 'buffer' });
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
-      // Ensure correct types, especially for numeric fields from Excel
-      parsedData = XLSX.utils.sheet_to_json<ParsedInventoryItem>(worksheet, {
-        // raw: false, // Use formatted strings, then parse them carefully
-        // defval: null // handle empty cells as null
-      }).map(row => ({
-        ...row,
-        quantity: Number(row.quantity) || 0,
-        unitCost: Number(row.unitCost) || 0,
-        reorderPoint: Number(row.reorderPoint) || 0,
-      }));
+      parsedItemsRaw = XLSX.utils.sheet_to_json<any>(worksheet, { rawNumbers: false });
     } else {
       return NextResponse.json({ error: 'Unsupported file type. Please upload CSV or XLSX.' }, { status: 400 });
     }
 
-    if (!parsedData || parsedData.length === 0) {
+    if (!parsedItemsRaw || parsedItemsRaw.length === 0) {
         return NextResponse.json({ error: 'No data found in the file or failed to parse correctly.' }, { status: 400 });
     }
     
-    // Validate data structure (basic example)
-    const validatedItems: InventoryItemDocument[] = parsedData.map((item, index) => {
-      if (!item.sku || !item.name || item.quantity == null || item.unitCost == null || item.reorderPoint == null) {
-        throw new Error(`Row ${index + 2}: Missing required fields (sku, name, quantity, unitCost, reorderPoint). Found: ${JSON.stringify(item)}`);
+    const processedItemsForAI: Partial<InventoryStockDocument>[] = [];
+    const batch = db.batch();
+    let itemsProcessedCount = 0;
+
+    for (const [index, rawItem] of parsedItemsRaw.entries()) {
+      // Normalize keys (e.g., 'SKU' or 'Product SKU' to 'sku')
+      const item: Partial<ParsedInventoryItem> = {};
+      for (const key in rawItem) {
+        const lowerKey = key.toLowerCase().replace(/\s+/g, '');
+        if (lowerKey.includes('sku')) item.sku = String(rawItem[key]).trim();
+        else if (lowerKey.includes('name') || lowerKey.includes('productname')) item.name = String(rawItem[key]).trim();
+        else if (lowerKey.includes('quantity') || lowerKey.includes('qty')) item.quantity = parseFloat(String(rawItem[key]));
+        else if (lowerKey.includes('cost') || lowerKey.includes('unitcost')) item.unitCost = parseFloat(String(rawItem[key]));
+        else if (lowerKey.includes('reorderpoint')) item.reorderPoint = parseInt(String(rawItem[key]), 10);
+        else if (lowerKey.includes('category')) item.category = String(rawItem[key]).trim();
+        else if (lowerKey.includes('description')) item.description = String(rawItem[key]).trim();
+        else if (lowerKey.includes('reorderquantity')) item.reorderQuantity = parseInt(String(rawItem[key]), 10);
+        else if (lowerKey.includes('location')) item.location = String(rawItem[key]).trim();
+        else if (lowerKey.includes('imageurl')) item.imageUrl = String(rawItem[key]).trim();
       }
-      return {
-        id: item.sku, // Assuming SKU is unique and can be used as ID
-        userId,
-        sku: String(item.sku),
-        name: String(item.name),
-        description: item.description ? String(item.description) : undefined,
-        quantity: Number(item.quantity),
-        unitCost: Number(item.unitCost),
-        reorderPoint: Number(item.reorderPoint),
-        reorderQuantity: Number(item.reorderPoint) > 0 ? Math.max(10, Number(item.reorderPoint) / 2) : 0, // Example logic
-        category: item.category ? String(item.category) : undefined,
-        lastUpdated: new Date() as any, // FieldValue.serverTimestamp() in actual Firestore,
-        lowStockAlertSent: false,
-      };
-    }).filter(item => item !== null);
+      
+      if (!item.sku || !item.name || item.quantity == null || Number.isNaN(item.quantity) || item.unitCost == null || Number.isNaN(item.unitCost) || item.reorderPoint == null || Number.isNaN(item.reorderPoint)) {
+        console.warn(`Row ${index + 2}: Skipping due to missing required fields (sku, name, quantity, unitCost, reorderPoint). Found: ${JSON.stringify(rawItem)}`);
+        continue;
+      }
 
+      const inventoryQuery = await db.collection('inventory')
+                                  .where('companyId', '==', companyId)
+                                  .where('sku', '==', item.sku)
+                                  .limit(1)
+                                  .get();
+      
+      const itemForAI: Partial<InventoryStockDocument> = { sku: item.sku, name: item.name, quantity: item.quantity, unitCost: item.unitCost, reorderPoint: item.reorderPoint, category: item.category };
 
-    // Placeholder for Firestore bulk insert
-    // const batch = db.batch();
-    // validatedItems.forEach(item => {
-    //   const docRef = db.collection('inventory').doc(item.sku); // Or generate unique ID
-    //   batch.set(docRef, item);
-    // });
-    // await batch.commit();
+      if (inventoryQuery.empty) { // New item
+        const newItemRef = db.collection('inventory').doc();
+        const newItemData: Omit<InventoryStockDocument, 'id'> = {
+          companyId,
+          productId: item.sku, // Using SKU as productId for simplicity
+          sku: item.sku,
+          name: item.name,
+          quantity: item.quantity,
+          unitCost: item.unitCost,
+          reorderPoint: item.reorderPoint,
+          description: item.description,
+          reorderQuantity: item.reorderQuantity !== undefined ? item.reorderQuantity : (item.reorderPoint > 0 ? Math.max(10, Math.floor(item.reorderPoint / 2)) : 0),
+          category: item.category,
+          location: item.location,
+          imageUrl: item.imageUrl,
+          lowStockAlertSent: false,
+          notes: `Imported from file ${file.name}`,
+          createdBy: userId,
+          lastUpdatedBy: userId,
+          createdAt: FieldValue.serverTimestamp() as FirebaseFirestore.Timestamp,
+          lastUpdated: FieldValue.serverTimestamp() as FirebaseFirestore.Timestamp,
+        };
+        batch.set(newItemRef, newItemData);
+        processedItemsForAI.push({id: newItemRef.id, ...newItemData});
+
+      } else { // Existing item
+        const existingDocRef = inventoryQuery.docs[0].ref;
+        const updateData: Partial<InventoryStockDocument> & { lastUpdatedBy: string, lastUpdated: FirebaseFirestore.FieldValue } = {
+            lastUpdatedBy: userId,
+            lastUpdated: FieldValue.serverTimestamp(),
+        };
+        if (item.name !== undefined) updateData.name = item.name;
+        if (item.quantity !== undefined) updateData.quantity = item.quantity;
+        if (item.unitCost !== undefined) updateData.unitCost = item.unitCost;
+        if (item.reorderPoint !== undefined) updateData.reorderPoint = item.reorderPoint;
+        if (item.category !== undefined) updateData.category = item.category;
+        if (item.description !== undefined) updateData.description = item.description;
+        if (item.reorderQuantity !== undefined) updateData.reorderQuantity = item.reorderQuantity;
+        if (item.location !== undefined) updateData.location = item.location;
+        if (item.imageUrl !== undefined) updateData.imageUrl = item.imageUrl;
+        
+        batch.update(existingDocRef, updateData);
+        const existingData = inventoryQuery.docs[0].data() as InventoryStockDocument;
+        processedItemsForAI.push({ ...existingData, ...updateData, id: existingDocRef.id});
+      }
+      itemsProcessedCount++;
+    }
+
+    if (itemsProcessedCount > 0) {
+        await batch.commit();
+    } else if (parsedItemsRaw.length > 0) { // If there were items but none were processable
+         return NextResponse.json({ error: 'No valid items found in the file to process.' }, { status: 400 });
+    }
+
 
     // Call fileAnalysis Genkit flow
     const aiInput: AnalyzeInventoryFileInput = {
-      parsedInventoryData: JSON.stringify(validatedItems.map(({userId, lastUpdated, ...rest}) => rest)), // Send relevant data
+      // Send only relevant fields to AI, not internal ones like companyId, userId, timestamps
+      parsedInventoryData: JSON.stringify(processedItemsForAI.map(p => ({
+        sku: p.sku,
+        name: p.name,
+        quantity: p.quantity,
+        unitCost: p.unitCost,
+        reorderPoint: p.reorderPoint,
+        category: p.category,
+        description: p.description,
+        reorderQuantity: p.reorderQuantity,
+        location: p.location,
+      }))),
     };
     const aiInsights = await analyzeInventoryFile(aiInput);
 
     return NextResponse.json({ 
-        message: `${validatedItems.length} items processed successfully.`,
+        message: `${itemsProcessedCount} items processed from ${file.name}.`,
         aiInsights 
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error uploading inventory:', error);
-    const message = error instanceof Error ? error.message : 'Failed to upload inventory.';
+    const message = error.message || 'Failed to upload inventory.';
+     if (error.code === 'MODULE_NOT_FOUND' || error.message.includes("Service account key not found")) {
+        return NextResponse.json({ error: 'Firebase Admin SDK not initialized. Service account key may be missing or incorrect.' }, { status: 500 });
+    }
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+    
