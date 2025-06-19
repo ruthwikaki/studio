@@ -272,28 +272,92 @@ export interface ForecastDocument {
 }
 
 // --------------------
-// Documents Collection
+// Documents Collection (for Invoices, POs, Receipts etc.)
 // --------------------
-export type ExtractedDocumentData = any; 
+export type ExtractedDocumentData = any; // This will be the output of the Genkit flow (InvoiceData, PurchaseOrderData, etc.)
+
+export type DocumentStatus =
+  | 'uploading' // Initial state before file reaches server storage
+  | 'uploaded' // File in storage, metadata created, pending further action
+  | 'pending_ocr' // Queued for OCR processing
+  | 'ocr_complete' // OCR text extracted, ready for data extraction
+  | 'processing_extraction' // Genkit flow is running
+  | 'extraction_complete' // Genkit flow finished, data extracted
+  | 'pending_review' // Needs human review (e.g., low confidence, discrepancies)
+  | 'processed' // Data verified/corrected, ready for system integration
+  | 'approved' // Document formally approved (e.g., invoice for payment)
+  | 'archived' // Document archived after processing
+  | 'error'; // An error occurred at any stage
 
 export interface DocumentMetadata {
-  id: string; 
+  id: string; // Firestore document ID
   companyId: string;
   fileName: string;
-  fileType: string; 
-  fileSize: number; 
-  fileUrl: string; 
-  status: 'uploading' | 'pending_ocr' | 'ocr_complete' | 'processing_extraction' | 'extraction_complete' | 'pending_review' | 'processed' | 'error' | 'archived';
-  documentTypeHint?: 'invoice' | 'purchase_order' | 'receipt' | 'auto_detect' | 'unknown';
+  fileType: string; // MIME type
+  fileSize: number; // In bytes
+  fileUrl: string; // URL to the file in Firebase Storage
+  status: DocumentStatus;
+  documentTypeHint?: 'invoice' | 'purchase_order' | 'receipt' | 'auto_detect' | 'unknown'; // User's hint or AI's classification
   extractedData?: ExtractedDocumentData;
-  linkedOrderId?: string; 
+  ocrText?: string; // Raw text from OCR
+  extractionConfidence?: number; // Overall confidence from Genkit flow (0-1)
+  processingError?: string; // If status is 'error'
+  linkedPoId?: string; // For an invoice, the ID of the matched PO
+  linkedInvoiceId?: string; // For a PO, the ID of the matched Invoice
   notes?: string;
   uploadedAt: Timestamp;
-  processedAt?: Timestamp; 
-  uploadedBy?: string; 
-  ocrConfidence?: number;
-  extractionConfidence?: number; 
+  processedAt?: Timestamp; // When Genkit flow finished
+  approvedAt?: Timestamp;
+  uploadedBy?: string; // UID of user
+  approvedBy?: string; // UID of user
 }
+
+// --------------------
+// PO Invoice Matches Collection (Explicit Matches)
+// --------------------
+export interface POInvoiceMatchDiscrepancy {
+  field: string; // e.g., "lineItems[0].quantity", "totalAmount"
+  poValue: any;
+  invoiceValue: any;
+  difference: string;
+}
+export interface POInvoiceMatchDocument {
+    id: string; // Firestore document ID
+    companyId: string;
+    invoiceId: string; // Ref to DocumentMetadata (invoice)
+    poId: string; // Ref to DocumentMetadata (PO) or OrderDocument (PO)
+    matchScore: number; // 0-100
+    matchDate: Timestamp;
+    matchedBy: 'system_ai' | 'user_manual';
+    discrepancies?: POInvoiceMatchDiscrepancy[];
+    status: 'pending_review' | 'approved' | 'rejected';
+    notes?: string;
+}
+
+// --------------------
+// Accounts Payable Collection
+// --------------------
+export interface AccountsPayableDocument {
+    id: string; // Firestore document ID
+    companyId: string;
+    invoiceId: string; // Ref to DocumentMetadata (invoice)
+    supplierId?: string; // Ref to Suppliers collection
+    supplierName?: string; // Denormalized
+    invoiceNumber: string;
+    invoiceDate: Timestamp;
+    dueDate: Timestamp;
+    totalAmount: number;
+    amountPaid: number;
+    balanceDue: number;
+    status: 'pending_payment' | 'partially_paid' | 'paid' | 'overdue' | 'disputed';
+    paymentDate?: Timestamp;
+    paymentMethod?: string;
+    transactionReference?: string;
+    createdAt: Timestamp;
+    createdBy?: string;
+    notes?: string;
+}
+
 
 // --------------------
 // Chat Sessions Collection
@@ -309,11 +373,6 @@ export interface ChatSessionDocument {
   companyId: string;
   userId: string; 
   messages: ChatMessage[];
-  context?: { // Deprecated, replaced by contextSnapshot for more detail
-    loadedInventoryDataSummary?: string; 
-    currentFocusSKU?: string; 
-    activeFlows?: string[]; 
-  };
   contextSnapshot?: string; // JSON string of the context provided to the AI for this session/turn
   createdAt: Timestamp;
   lastMessageAt: Timestamp;
@@ -336,4 +395,11 @@ export interface AnalyticsDocument {
     // Add other KPIs as needed
     lastCalculated: Timestamp; // When this report was generated/updated
     generatedBy?: string; // UID of user or 'system'
+}
+
+// --------------------
+// Counters Collection (for generating sequential numbers)
+// --------------------
+export interface CounterDocument {
+    count: number;
 }
