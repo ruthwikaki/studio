@@ -22,6 +22,7 @@ export const GET = withAuth(async (request: NextRequest, { params }: { params: {
     const inventoryQuery = await db.collection('inventory')
                                   .where('companyId', '==', companyId)
                                   .where('sku', '==', sku)
+                                  .where('deletedAt', '==', null) // Check for soft delete
                                   .limit(1)
                                   .get();
 
@@ -31,6 +32,7 @@ export const GET = withAuth(async (request: NextRequest, { params }: { params: {
 
     const doc = inventoryQuery.docs[0];
     const data = doc.data();
+    // Use select() here if only specific fields are needed for a detail view, for now sending all
     const item: InventoryStockDocument = {
       id: doc.id,
       ...data,
@@ -70,6 +72,7 @@ export const PUT = withAuth(async (request: NextRequest, { params }: { params: {
     const inventoryQuery = await db.collection('inventory')
                                   .where('companyId', '==', companyId)
                                   .where('sku', '==', skuParam)
+                                  .where('deletedAt', '==', null)
                                   .limit(1)
                                   .get();
 
@@ -94,7 +97,7 @@ export const PUT = withAuth(async (request: NextRequest, { params }: { params: {
         resourceType: 'inventory',
         resourceId: itemDocRef.id,
         description: `Updated item ${originalData.name} (SKU: ${skuParam}).`,
-        details: { sku: skuParam, updatedFields: validationResult.data, originalName: originalData.name } // Example details
+        details: { sku: skuParam, updatedFields: validationResult.data, originalName: originalData.name }
     });
     
     const updatedDocSnap = await itemDocRef.get();
@@ -116,11 +119,12 @@ export const PUT = withAuth(async (request: NextRequest, { params }: { params: {
   }
 });
 
+// Implement Soft Delete
 export const DELETE = withAuth(async (request: NextRequest, { params }: { params: { sku: string } }, user: VerifiedUser) => {
-  if (!requireRole(user.role, 'admin')) { // Example: Admins or owners can delete
+  if (!requireRole(user.role, 'admin')) {
     return NextResponse.json({ error: 'Access denied. Requires admin role or higher.' }, { status: 403 });
   }
-  const { companyId } = user;
+  const { companyId, uid } = user;
   const skuParam = params.sku;
 
   if (!skuParam) {
@@ -131,6 +135,7 @@ export const DELETE = withAuth(async (request: NextRequest, { params }: { params
     const inventoryQuery = await db.collection('inventory')
                                   .where('companyId', '==', companyId)
                                   .where('sku', '==', skuParam)
+                                  .where('deletedAt', '==', null) // Ensure it's not already soft-deleted
                                   .limit(1)
                                   .get();
     
@@ -140,22 +145,28 @@ export const DELETE = withAuth(async (request: NextRequest, { params }: { params
 
     const itemDocRef = inventoryQuery.docs[0].ref;
     const itemData = inventoryQuery.docs[0].data() as InventoryStockDocument;
-    await itemDocRef.delete();
+    
+    // Soft delete by setting deletedAt timestamp
+    await itemDocRef.update({
+      deletedAt: FieldValue.serverTimestamp(),
+      lastUpdated: FieldValue.serverTimestamp(),
+      lastUpdatedBy: uid,
+    });
 
     await logActivity({
         user,
-        actionType: 'item_deleted',
+        actionType: 'item_soft_deleted', // Changed action type
         resourceType: 'inventory',
         resourceId: itemDocRef.id,
-        description: `Deleted item ${itemData.name} (SKU: ${skuParam}).`,
+        description: `Soft deleted item ${itemData.name} (SKU: ${skuParam}).`,
         details: { sku: skuParam, name: itemData.name }
     });
 
-    return NextResponse.json({ message: `Item ${skuParam} deleted successfully.` }, { status: 200 });
+    return NextResponse.json({ message: `Item ${skuParam} soft deleted successfully.` }, { status: 200 });
 
   } catch (error: any) {
-    console.error(`Error deleting inventory item ${params.sku}:`, error);
-    const message = error.message || `Failed to delete item ${params.sku}.`;
+    console.error(`Error soft deleting inventory item ${params.sku}:`, error);
+    const message = error.message || `Failed to soft delete item ${params.sku}.`;
     return NextResponse.json({ error: message }, { status: 500 });
   }
 });

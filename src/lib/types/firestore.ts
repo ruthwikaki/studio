@@ -75,6 +75,7 @@ export interface ProductDocument {
   createdAt: Timestamp;
   lastUpdated: Timestamp;
   createdBy?: string; // UID of user who created it
+  deletedAt?: Timestamp; // For soft deletes
 }
 
 // --------------------
@@ -101,6 +102,7 @@ export interface InventoryStockDocument {
   imageUrl?: string; // Denormalized from ProductDocument
   leadTimeDays?: number; // Specific lead time for this item if different from supplier default
   onOrderQuantity?: number; // Quantity currently on order from suppliers
+  deletedAt?: Timestamp; // For soft deletes
 }
 
 // --------------------
@@ -151,6 +153,7 @@ export interface SupplierDocument {
   totalSpend?: number;
   onTimeDeliveryRate?: number; // 0.0 to 1.0
   qualityRating?: number; // e.g. 1-5
+  deletedAt?: Timestamp; // For soft deletes
 }
 
 // --------------------
@@ -220,6 +223,7 @@ export interface OrderDocument {
   lastUpdated: Timestamp;
   createdBy?: string; // UID of user
   lastUpdatedBy?: string; // UID of user
+  deletedAt?: Timestamp; // For soft deletes
 }
 
 // --------------------
@@ -240,6 +244,7 @@ export interface SalesHistoryDocument {
   customerId?: string; // Identifier for the customer
   locationId?: string; // If sold from a specific retail location/warehouse
   notes?: string;
+  deletedAt?: Timestamp; // For soft deletes
 }
 
 // --------------------
@@ -313,6 +318,7 @@ export interface DocumentMetadata {
   uploadedBy?: string; // UID of user
   lastUpdatedBy?: string; // UID of user
   approvedBy?: string; // UID of user
+  deletedAt?: Timestamp; // For soft deletes
 }
 
 // --------------------
@@ -384,9 +390,10 @@ export interface ChatSessionDocument {
 }
 
 // --------------------
-// Analytics Reports Collection (for daily/periodic snapshots)
+// Analytics Reports / Aggregates Collection
 // --------------------
-export interface AnalyticsDocument {
+// Renamed AnalyticsDocument to DailyAggregateDocument for clarity
+export interface DailyAggregateDocument {
     id: string; // e.g., daily_report_companyId_YYYY-MM-DD
     companyId: string;
     date: Timestamp; // The date this report pertains to
@@ -396,8 +403,12 @@ export interface AnalyticsDocument {
     todaysRevenue?: number; // If it's a daily report
     turnoverRate?: number; // Could be calculated and stored
     // Add other KPIs as needed
+    // Example of category-based aggregation
+    inventoryValueByCategory?: Record<string, number>;
+    salesByProduct?: Record<string, { quantity: number; revenue: number }>;
+    // ---
     lastCalculated: Timestamp; // When this report was generated/updated
-    generatedBy?: string; // UID of user or 'system'
+    generatedBy?: string; // UID of user or 'system_aggregation_job'
 }
 
 // --------------------
@@ -417,6 +428,8 @@ export type NotificationType =
   | 'document_processed' 
   | 'supplier_score_updated'
   | 'new_forecast_available'
+  | 'job_completed' // For background jobs
+  | 'job_failed'
   | 'generic_alert';
 
 export interface NotificationDocument {
@@ -426,8 +439,8 @@ export interface NotificationDocument {
   type: NotificationType;
   title: string;
   message: string;
-  relatedResourceId?: string; // e.g., SKU, orderId, documentId
-  relatedResourceType?: 'inventory' | 'order' | 'document' | 'supplier' | 'forecast';
+  relatedResourceId?: string; // e.g., SKU, orderId, documentId, jobId
+  relatedResourceType?: 'inventory' | 'order' | 'document' | 'supplier' | 'forecast' | 'job';
   isRead: boolean;
   createdAt: Timestamp;
   linkTo?: string; // URL path for quick navigation
@@ -437,11 +450,12 @@ export interface NotificationDocument {
 // Activity Logs Collection
 // --------------------
 export type ActivityActionType = 
-  | 'item_created' | 'item_updated' | 'item_deleted'
-  | 'order_created' | 'order_status_updated'
-  | 'document_uploaded' | 'document_processed' | 'document_approved' | 'document_deleted'
-  | 'supplier_created' | 'supplier_updated' | 'supplier_score_recalculated'
-  | 'forecast_generated'
+  | 'item_created' | 'item_updated' | 'item_deleted' | 'item_soft_deleted'
+  | 'order_created' | 'order_status_updated' | 'order_deleted' | 'order_soft_deleted'
+  | 'document_uploaded' | 'document_processed' | 'document_approved' | 'document_deleted' | 'document_soft_deleted'
+  | 'supplier_created' | 'supplier_updated' | 'supplier_score_recalculated' | 'supplier_deleted' | 'supplier_soft_deleted'
+  | 'forecast_requested' | 'forecast_generated' // Changed from forecast_generated
+  | 'job_created' | 'job_status_updated'
   | 'user_login' | 'user_logout' // Example auth events
   | 'settings_changed';
 
@@ -452,7 +466,7 @@ export interface ActivityLogDocument {
   userEmail?: string; // Denormalized for easier display
   actionType: ActivityActionType;
   description: string; // e.g., "Updated quantity for SKU001 to 50 units"
-  resourceType?: 'inventory' | 'order' | 'document' | 'supplier' | 'forecast' | 'user' | 'company_settings';
+  resourceType?: 'inventory' | 'order' | 'document' | 'supplier' | 'forecast' | 'user' | 'company_settings' | 'job';
   resourceId?: string; // ID of the affected resource
   details?: Record<string, any>; // e.g., { oldQuantity: 70, newQuantity: 50 }
   ipAddress?: string; // Client IP address (if obtainable)
@@ -469,4 +483,47 @@ export interface UserCacheDocument {
     displayName?: string;
     email?: string;
     lastRefreshed: Timestamp;
+}
+
+// --------------------
+// Job Queue Collection (for background processing)
+// --------------------
+export type JobType = 
+    | 'generate_forecast'
+    | 'generate_report'
+    | 'bulk_import_inventory'
+    | 'document_ocr_extraction'; // If OCR/extraction is also offloaded
+
+export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'retrying';
+
+export interface JobQueueDocument<T = any> {
+    id: string;
+    companyId: string;
+    userId?: string; // User who initiated the job, if applicable
+    jobType: JobType;
+    payload: T; // Job-specific data
+    status: JobStatus;
+    createdAt: Timestamp;
+    updatedAt: Timestamp;
+    startedAt?: Timestamp;
+    completedAt?: Timestamp;
+    result?: any; // Store successful result summary or link
+    error?: string; // Store error message if failed
+    retryCount?: number;
+    maxRetries?: number;
+    priority?: number; // 0 (highest) to N (lowest)
+}
+
+// Specific payload types for jobs
+export interface GenerateForecastJobPayload {
+    sku: string;
+    seasonalityFactors?: string;
+    modelType: string;
+    // other relevant parameters from ForecastDemandInput
+}
+
+export interface DocumentOcrExtractionJobPayload {
+    documentId: string; // ID of the document in 'documents' collection
+    fileUrl: string;    // URL of the file in storage
+    documentTypeHint?: string;
 }
