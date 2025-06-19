@@ -1,11 +1,17 @@
 // src/lib/firebase/admin.ts
 import * as admin from 'firebase-admin';
+import * as path from 'path'; // Import the 'path' module
 
-// Path relative to this file (src/lib/firebase/admin.ts) to reach the project root
-const serviceAccountPath = '../../../service-account-key.json'; 
+// Construct an absolute path to 'service-account-key.json' in the project root
+// __dirname will be src/lib/firebase, so ../../.. goes up to the project root
+const serviceAccountPath = path.resolve(__dirname, '../../../service-account-key.json');
 
 try {
   if (!admin.apps.length) {
+    // Check if the service account key file actually exists before trying to require it
+    // This provides a more targeted error message.
+    // Note: fs.existsSync would be ideal but adds another dependency if not already used.
+    // For now, relying on the require error.
     const serviceAccount = require(serviceAccountPath);
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
@@ -15,9 +21,9 @@ try {
   }
 } catch (error: any) {
   console.error("CRITICAL ERROR initializing Firebase Admin SDK in admin.ts:");
-  if (error.code === 'MODULE_NOT_FOUND' && error.message.includes(serviceAccountPath.replace('../../../', ''))) { // Check for the actual filename part
-    console.error(`  Reason: The 'service-account-key.json' file was not found in the project root.`);
-    console.error(`  Expected at: project_root/service-account-key.json (resolved from ${serviceAccountPath} relative to admin.ts)`);
+  if (error.code === 'MODULE_NOT_FOUND' && error.message.includes(path.basename(serviceAccountPath))) {
+    console.error(`  Reason: The '${path.basename(serviceAccountPath)}' file was not found.`);
+    console.error(`  Expected at: ${serviceAccountPath}`);
     console.error("  ACTION: Please download your service account key from your Firebase project settings, name it 'service-account-key.json', and place it in the project root directory.");
   } else if (error.message.includes("Failed to parse service account KeyFile") || (error.message.includes("Credential implementation provided to initializeApp()") && error.message.includes("failed to fetch a Project ID"))) {
      console.error("  Reason: The 'service-account-key.json' file seems to be invalid or incomplete (e.g., missing 'project_id', not valid JSON).");
@@ -28,7 +34,7 @@ try {
   }
   console.error("--------------------------------------------------------------------");
   // Optionally re-throw or exit if initialization is critical for server startup
-  // throw error; 
+  // throw error;
 }
 
 export const db = admin.firestore();
