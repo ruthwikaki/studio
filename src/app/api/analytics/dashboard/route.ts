@@ -1,70 +1,87 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-// import { getFirestoreAdmin } from 'firebase-admin/firestore'; // Placeholder
-// import { verifyAuthToken } from '@/lib/firebase/admin-auth'; // Placeholder
-import type { InventoryItemDocument } from '@/lib/types/firestore';
+import { db, AdminTimestamp } from '@/lib/firebase/admin';
+import { verifyAuthToken } from '@/lib/firebase/admin-auth';
+import type { InventoryStockDocument, OrderDocument, SalesHistoryDocument } from '@/lib/types/firestore';
 
-// Placeholder for Firestore instance
-// const db = getFirestoreAdmin();
+export const revalidate = 300; // Revalidate every 5 minutes
 
 interface DashboardKPIs {
   totalInventoryValue: number;
   lowStockItemsCount: number;
   outOfStockItemsCount: number;
-  turnoverRate?: number; // Placeholder, complex to calculate simply
-  // ABC analysis might be too complex for a simple endpoint, consider a dedicated flow/report
+  pendingOrdersCount: number;
+  todaysRevenue: number;
+  // turnoverRate?: number; // Complex, might be better as a separate calculation or from a daily report
 }
 
 export async function GET(request: NextRequest) {
-  // TODO: Implement Firebase Auth token verification
-  // const { uid } = await verifyAuthToken(request);
-  // if (!uid) {
-  //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  // }
-  // const userId = uid;
+  let companyId: string;
+  try {
+    ({ companyId } = await verifyAuthToken(request));
+  } catch (authError: any) {
+    return NextResponse.json({ error: authError.message || 'Authentication failed' }, { status: 401 });
+  }
 
   try {
-    // Placeholder for Firestore query
-    // const inventorySnapshot = await db.collection('inventory').where('userId', '==', userId).get();
-    // const items: InventoryItemDocument[] = inventorySnapshot.docs.map(doc => doc.data() as InventoryItemDocument);
-
-    // Mocked items for calculation
-    const items: InventoryItemDocument[] = [
-        { id: "SKU001", userId: "user123", sku: "SKU001", name: "Blue T-Shirt", quantity: 100, unitCost: 10, reorderPoint: 20, lastUpdated: new Date() as any },
-        { id: "SKU002", userId: "user123", sku: "SKU002", name: "Red Scarf", quantity: 10, unitCost: 15, reorderPoint: 15, lastUpdated: new Date() as any },
-        { id: "SKU003", userId: "user123", sku: "SKU003", name: "Green Hat", quantity: 0, unitCost: 5, reorderPoint: 10, lastUpdated: new Date() as any },
-    ];
-
+    // 1. Inventory Metrics
+    const inventorySnapshot = await db.collection('inventory')
+                                      .where('companyId', '==', companyId)
+                                      .get();
+    
     let totalInventoryValue = 0;
     let lowStockItemsCount = 0;
     let outOfStockItemsCount = 0;
 
-    items.forEach(item => {
-      totalInventoryValue += item.quantity * item.unitCost;
-      if (item.quantity <= item.reorderPoint) {
+    inventorySnapshot.docs.forEach(doc => {
+      const item = doc.data() as InventoryStockDocument;
+      totalInventoryValue += (item.quantity || 0) * (item.unitCost || 0);
+      if (item.quantity <= item.reorderPoint && item.reorderPoint > 0) {
         lowStockItemsCount++;
       }
-      if (item.quantity === 0) {
+      if (item.quantity <= 0) {
         outOfStockItemsCount++;
       }
     });
 
-    // Turnover rate calculation is complex and typically requires cost of goods sold (COGS)
-    // and average inventory value over a period. This is a placeholder.
-    const turnoverRate = 5.2; // Placeholder value
+    // 2. Pending Orders Count
+    const pendingOrdersSnapshot = await db.collection('orders')
+                                          .where('companyId', '==', companyId)
+                                          .where('status', 'in', ['pending', 'pending_approval', 'pending_payment', 'processing', 'pending_fulfillment', 'awaiting_shipment'])
+                                          .count()
+                                          .get();
+    const pendingOrdersCount = pendingOrdersSnapshot.data().count;
+
+    // 3. Today's Revenue
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Start of today
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1); // Start of tomorrow
+
+    const salesTodaySnapshot = await db.collection('sales_history')
+                                        .where('companyId', '==', companyId)
+                                        .where('date', '>=', AdminTimestamp.fromDate(today))
+                                        .where('date', '<', AdminTimestamp.fromDate(tomorrow))
+                                        .get();
+    let todaysRevenue = 0;
+    salesTodaySnapshot.docs.forEach(doc => {
+      const sale = doc.data() as SalesHistoryDocument;
+      todaysRevenue += sale.revenue || 0;
+    });
 
     const kpis: DashboardKPIs = {
       totalInventoryValue,
       lowStockItemsCount,
       outOfStockItemsCount,
-      turnoverRate,
+      pendingOrdersCount,
+      todaysRevenue,
     };
 
     return NextResponse.json({ data: kpis });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching dashboard analytics:', error);
-    const message = error instanceof Error ? error.message : 'Failed to fetch dashboard analytics.';
+    const message = error.message || 'Failed to fetch dashboard analytics.';
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

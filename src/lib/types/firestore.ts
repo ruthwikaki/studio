@@ -1,3 +1,4 @@
+
 // src/lib/types/firestore.ts
 import type { Timestamp } from 'firebase/firestore';
 
@@ -90,9 +91,14 @@ export interface InventoryStockDocument {
   location?: string; // e.g., Warehouse ID, shelf number
   lowStockAlertSent?: boolean; // Tracks if a low stock alert has been sent
   lastUpdated: Timestamp;
+  lastUpdatedBy?: string; // UID of user who last updated
+  createdAt?: Timestamp; // When the inventory item was first created
+  createdBy?: string; // UID of user who created it
   notes?: string;
   category?: string; // Denormalized from ProductDocument
   imageUrl?: string; // Denormalized from ProductDocument
+  leadTimeDays?: number; // Specific lead time for this item if different from supplier default
+  onOrderQuantity?: number; // Quantity currently on order from suppliers
 }
 
 // --------------------
@@ -132,11 +138,12 @@ export interface SupplierDocument {
   reliabilityScore?: number; // e.g., 0-100
   paymentTerms?: string;
   moq?: number; // General Minimum Order Quantity for this supplier
-  productsSupplied?: SupplierProductInfo[]; // Changed from array of strings to array of objects
+  productsSupplied?: SupplierProductInfo[];
   notes?: string;
   createdAt: Timestamp;
   lastUpdated: Timestamp;
   createdBy?: string; // UID of user
+  lastUpdatedBy?: string; // UID of user
   logoUrl?: string;
   lastOrderDate?: Timestamp;
   totalSpend?: number;
@@ -210,6 +217,7 @@ export interface OrderDocument {
   createdAt: Timestamp;
   lastUpdated: Timestamp;
   createdBy?: string; // UID of user
+  lastUpdatedBy?: string; // UID of user
 }
 
 // --------------------
@@ -237,7 +245,7 @@ export interface SalesHistoryDocument {
 // --------------------
 export interface ForecastPredictionPeriod {
   demand: number;
-  confidence?: 'High' | 'Medium' | 'Low' | string; // Allow string for custom
+  confidence?: 'High' | 'Medium' | 'Low' | string;
   explanation?: string;
   confidenceInterval?: {
     lowerBound: number;
@@ -248,15 +256,14 @@ export interface ForecastPredictionPeriod {
 export interface ForecastDocument {
   id: string; // Firestore document ID
   companyId: string;
-  productId: string; // Reference to ProductDocument.id
+  productId: string; // Reference to ProductDocument.id (can be SKU if using SKU as product ID)
   sku: string; // Denormalized SKU
   modelType: string; // e.g., 'SIMPLE_MOVING_AVERAGE', 'AI_PATTERN_RECOGNITION'
   generatedAt: Timestamp;
   predictions: {
-    p30?: ForecastPredictionPeriod; // Next 30 days
-    p60?: ForecastPredictionPeriod; // Next 60 days
-    p90?: ForecastPredictionPeriod; // Next 90 days
-    // Can add more periods like p7, p180, etc.
+    '30day': ForecastPredictionPeriod; // Using direct keys from Genkit flow
+    '60day': ForecastPredictionPeriod;
+    '90day': ForecastPredictionPeriod;
   };
   accuracy?: number; // Overall accuracy score (e.g., MAPE, RMSE) if back-tested
   historicalDataUsedSummary?: string; // e.g., "Sales from YYYY-MM-DD to YYYY-MM-DD (90 data points)"
@@ -267,25 +274,25 @@ export interface ForecastDocument {
 // --------------------
 // Documents Collection
 // --------------------
-export type ExtractedDocumentData = any; // This will store the specific output of documentExtraction flow (InvoiceData, PurchaseOrderData, etc.)
+export type ExtractedDocumentData = any; 
 
 export interface DocumentMetadata {
-  id: string; // Firestore document ID
+  id: string; 
   companyId: string;
   fileName: string;
-  fileType: string; // e.g., 'application/pdf', 'image/jpeg'
-  fileSize: number; // in bytes
-  fileUrl: string; // Cloud Storage URL
+  fileType: string; 
+  fileSize: number; 
+  fileUrl: string; 
   status: 'uploading' | 'pending_ocr' | 'ocr_complete' | 'processing_extraction' | 'extraction_complete' | 'pending_review' | 'processed' | 'error' | 'archived';
-  documentTypeHint?: 'invoice' | 'purchase_order' | 'receipt' | 'auto_detect' | 'unknown'; // Changed 'type' to 'documentTypeHint'
+  documentTypeHint?: 'invoice' | 'purchase_order' | 'receipt' | 'auto_detect' | 'unknown';
   extractedData?: ExtractedDocumentData;
-  linkedOrderId?: string; // Optional link to an order in the 'orders' collection
+  linkedOrderId?: string; 
   notes?: string;
   uploadedAt: Timestamp;
-  processedAt?: Timestamp; // Timestamp when Genkit extraction finished
-  uploadedBy?: string; // UID of user
+  processedAt?: Timestamp; 
+  uploadedBy?: string; 
   ocrConfidence?: number;
-  extractionConfidence?: number; // Overall confidence from Genkit extraction
+  extractionConfidence?: number; 
 }
 
 // --------------------
@@ -295,23 +302,37 @@ export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: Timestamp;
-  // Optional: tool_calls, tool_call_id, tool_outputs for Genkit tool interactions
 }
 
 export interface ChatSessionDocument {
-  id: string; // Firestore document ID
+  id: string; 
   companyId: string;
-  userId: string; // User who initiated or is part of this session
+  userId: string; 
   messages: ChatMessage[];
   context?: {
-    loadedInventoryDataSummary?: string; // e.g., "File: Q1_inventory.csv" or "Live Database View"
-    currentFocusSKU?: string; // If chat is focused on a specific item
-    activeFlows?: string[]; // Names of any Genkit flows currently influencing the chat
+    loadedInventoryDataSummary?: string; 
+    currentFocusSKU?: string; 
+    activeFlows?: string[]; 
   };
   createdAt: Timestamp;
   lastMessageAt: Timestamp;
-  title?: string; // User-editable or AI-generated title for the session
+  title?: string; 
   tags?: string[];
 }
 
-    
+// --------------------
+// Analytics Reports Collection (for daily/periodic snapshots)
+// --------------------
+export interface AnalyticsDocument {
+    id: string; // e.g., daily_report_companyId_YYYY-MM-DD
+    companyId: string;
+    date: Timestamp; // The date this report pertains to
+    totalInventoryValue: number;
+    lowStockItemsCount: number;
+    outOfStockItemsCount: number;
+    todaysRevenue?: number; // If it's a daily report
+    turnoverRate?: number; // Could be calculated and stored
+    // Add other KPIs as needed
+    lastCalculated: Timestamp; // When this report was generated/updated
+    generatedBy?: string; // UID of user or 'system'
+}
