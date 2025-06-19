@@ -36,19 +36,29 @@ export async function GET(request: NextRequest) {
 
     inventorySnapshot.docs.forEach(doc => {
       const item = doc.data() as InventoryStockDocument;
-      totalInventoryValue += (item.quantity || 0) * (item.unitCost || 0);
-      if (item.quantity <= item.reorderPoint && item.reorderPoint > 0) {
+      // Defensive coding for potentially missing or non-numeric fields
+      const quantity = typeof item.quantity === 'number' ? item.quantity : 0;
+      const unitCost = typeof item.unitCost === 'number' ? item.unitCost : 0;
+      const reorderPoint = typeof item.reorderPoint === 'number' ? item.reorderPoint : 0;
+
+      totalInventoryValue += quantity * unitCost;
+      if (reorderPoint > 0 && quantity <= reorderPoint) { // Ensure reorderPoint is positive before comparison
         lowStockItemsCount++;
       }
-      if (item.quantity <= 0) {
+      if (quantity <= 0) {
         outOfStockItemsCount++;
       }
     });
 
     // 2. Pending Orders Count
+    // Consider only actionable pending states for a PO workflow
+    const pendingStatuses: OrderDocument['status'][] = ['pending', 'pending_approval', 'processing', 'awaiting_shipment'];
+    // For Sales Orders, you might include 'pending_payment', 'pending_fulfillment'
+    
     const pendingOrdersSnapshot = await db.collection('orders')
                                           .where('companyId', '==', companyId)
-                                          .where('status', 'in', ['pending', 'pending_approval', 'pending_payment', 'processing', 'pending_fulfillment', 'awaiting_shipment'])
+                                          .where('type', '==', 'purchase') // Example: counting pending POs
+                                          .where('status', 'in', pendingStatuses)
                                           .count()
                                           .get();
     const pendingOrdersCount = pendingOrdersSnapshot.data().count;
@@ -67,7 +77,8 @@ export async function GET(request: NextRequest) {
     let todaysRevenue = 0;
     salesTodaySnapshot.docs.forEach(doc => {
       const sale = doc.data() as SalesHistoryDocument;
-      todaysRevenue += sale.revenue || 0;
+      const revenue = typeof sale.revenue === 'number' ? sale.revenue : 0;
+      todaysRevenue += revenue;
     });
 
     const kpis: DashboardKPIs = {
@@ -81,6 +92,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ data: kpis });
   } catch (error: any) {
     console.error('Error fetching dashboard analytics:', error);
+    // Check for Firestore-specific error codes, like 'failed-precondition' for missing indexes
+    if (error.code === 'failed-precondition') {
+        return NextResponse.json({ 
+            error: 'A Firestore query failed, possibly due to a missing index. Please check server logs for a link to create the index.',
+            details: error.message 
+        }, { status: 500 });
+    }
     const message = error.message || 'Failed to fetch dashboard analytics.';
     return NextResponse.json({ error: message }, { status: 500 });
   }

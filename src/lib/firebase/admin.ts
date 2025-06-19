@@ -1,4 +1,3 @@
-
 // src/lib/firebase/admin.ts
 import * as admin from 'firebase-admin';
 
@@ -32,11 +31,5 @@ export const db = admin.firestore();
 export const authAdmin = admin.auth();
 export const storageAdmin = admin.storage();
 export const FieldValue = admin.firestore.FieldValue;
-export type AdminTimestamp = admin.firestore.Timestamp;
-
-// Optional: Configure Firestore settings (e.g., to ignore undefined fields)
-// This is often set globally where `db` is initialized.
-// db.settings({
-//   ignoreUndefinedProperties: true,
-// });
-// console.log("Firestore ignoreUndefinedProperties set to true.");
+export const AdminTimestamp = admin.firestore.Timestamp; // Changed from 'export type' to 'export const'
+export type { Timestamp as AdminTimestampType } from 'firebase-admin/firestore'; // Export type separately if needed elsewhere with a different name

@@ -16,7 +16,7 @@ import ScenarioSimulator from '@/components/analytics/forecasting/ScenarioSimula
 import type { ForecastDemandOutput, SalesHistoryDocument, ModelType } from '@/lib/types/firestore'; // Assuming SalesHistoryDocument is also in firestore types
 import { Loader2, TrendingUp, Zap, Wand2, SlidersHorizontal, BarChartBig } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AdminTimestamp } from '@/lib/firebase/admin'; // Only for type checking, not used in client component directly
+// Removed: import { AdminTimestamp } from '@/lib/firebase/admin';
 import { useToast } from '@/hooks/use-toast';
 
 
