@@ -1,13 +1,13 @@
 
 "use client";
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { PlusCircle, Search, Filter, MoreHorizontal, Edit, FileText, Eye, Loader2, AlertTriangle } from 'lucide-react';
+import { PlusCircle, Search, Filter, MoreHorizontal, Edit, FileText, Eye, Loader2, AlertTriangle, Users, Link as LinkIcon } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useSuppliers } from '@/hooks/useSuppliers';
@@ -33,9 +33,20 @@ const ReliabilityDisplay = ({ score }: { score?: number }) => {
   );
 };
 
+const debounce = <F extends (...args: any[]) => any>(func: F, waitFor: number) => {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  return (...args: Parameters<F>): Promise<ReturnType<F>> =>
+    new Promise(resolve => {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      timeout = setTimeout(() => resolve(func(...args)), waitFor);
+    });
+};
+
 export default function SuppliersPage() {
   const [searchTerm, setSearchTerm] = useState('');
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(''); // Simplified for now, full debounce needed
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [filterReliability, setFilterReliability] = useState('all');
   const [filterLeadTime, setFilterLeadTime] = useState('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -43,17 +54,17 @@ export default function SuppliersPage() {
 
   const { toast } = useToast();
 
-  // Basic debounce
-  // useEffect(() => {
-  //   const handler = setTimeout(() => setDebouncedSearchTerm(searchTerm), 300);
-  //   return () => clearTimeout(handler);
-  // }, [searchTerm]);
+  const debouncedSetSearchTerm = useCallback(debounce(setDebouncedSearchTerm, 500), []);
+
+  useEffect(() => {
+    debouncedSetSearchTerm(searchTerm);
+  }, [searchTerm, debouncedSetSearchTerm]);
 
   const supplierFilters = useMemo(() => ({
-    searchTerm: searchTerm, // Using direct searchTerm for now
-    reliability: filterReliability,
-    leadTime: filterLeadTime,
-  }), [searchTerm, filterReliability, filterLeadTime]);
+    searchTerm: debouncedSearchTerm,
+    reliability: filterReliability !== 'all' ? filterReliability : undefined,
+    leadTime: filterLeadTime !== 'all' ? filterLeadTime : undefined,
+  }), [debouncedSearchTerm, filterReliability, filterLeadTime]);
 
   const {
     data,
@@ -77,7 +88,7 @@ export default function SuppliersPage() {
     setEditingSupplier(null);
   };
 
-  if (isError) {
+  if (isError && !isLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center">
         <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
@@ -95,15 +106,20 @@ export default function SuppliersPage() {
           <h1 className="text-3xl font-headline font-semibold text-foreground">Supplier Management</h1>
           <p className="text-muted-foreground">Browse, add, and manage your suppliers.</p>
         </div>
-        <Button onClick={() => handleOpenModal()} className="bg-accent hover:bg-accent/90 text-accent-foreground">
-          <PlusCircle className="mr-2 h-4 w-4" /> Add Supplier
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" asChild>
+              <Link href="/suppliers/compare"><LinkIcon className="mr-2 h-4 w-4" /> Compare Suppliers</Link>
+          </Button>
+          <Button onClick={() => handleOpenModal()} className="bg-accent hover:bg-accent/90 text-accent-foreground">
+            <PlusCircle className="mr-2 h-4 w-4" /> Add Supplier
+          </Button>
+        </div>
       </div>
 
       <Card className="shadow-lg">
         <CardHeader>
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <CardTitle className="font-headline text-xl">Supplier List</CardTitle>
+            <CardTitle className="font-headline text-xl flex items-center"><Users className="mr-2 h-5 w-5 text-primary" />Supplier List</CardTitle>
             <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
               <div className="relative w-full sm:w-auto">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -142,7 +158,7 @@ export default function SuppliersPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {isLoading && !data ? (
+          {isLoading && !data?.pages.length ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {Array.from({ length: 3 }).map((_, i) => (
                 <Card key={`skeleton-${i}`} className="flex flex-col">
@@ -172,14 +188,15 @@ export default function SuppliersPage() {
                   <CardHeader className="flex flex-row items-center justify-between pb-2">
                      <div className="flex items-center gap-3">
                         <Image 
-                            src={supplier.logoUrl || "https://placehold.co/60x60.png"} 
+                            src={supplier.logoUrl || `https://placehold.co/60x60.png?text=${supplier.name.substring(0,2)}`} 
                             alt={`${supplier.name} logo`}
                             width={48} 
                             height={48} 
-                            className="rounded-full border bg-muted"
+                            className="rounded-full border bg-muted object-cover"
                             data-ai-hint="company logo"
+                            onError={(e) => { e.currentTarget.src = `https://placehold.co/60x60.png?text=${supplier.name.substring(0,2)}`; }}
                         />
-                        <CardTitle className="font-headline text-lg">{supplier.name}</CardTitle>
+                        <CardTitle className="font-headline text-lg line-clamp-2">{supplier.name}</CardTitle>
                      </div>
                      <DropdownMenu>
                         <DropdownMenuTrigger asChild>

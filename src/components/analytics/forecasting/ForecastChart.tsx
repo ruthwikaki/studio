@@ -3,9 +3,9 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
-import { LineChart as RechartsLineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip, Area } from 'recharts';
-import type { ForecastDemandOutput } from '@/ai/flows/forecasting';
-import { BarChart } from 'lucide-react'; // Using BarChart as a generic chart icon
+import { LineChart as RechartsLineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip, Area, Legend } from 'recharts';
+import type { ForecastDemandOutput } from '@/ai/flows/forecasting'; // Ensure this path is correct
+import { BarChart } from 'lucide-react';
 
 interface ForecastChartProps {
   historicalData: { date: string; quantitySold: number }[];
@@ -33,26 +33,13 @@ export default function ForecastChart({ historicalData, baselinePredictions, sce
   }
 
   const chartConfig = {
-    historical: {
-      label: "Historical Sales",
-      color: "hsl(var(--primary))", // Blue
-    },
-    baseline: {
-      label: "Baseline Forecast",
-      color: "hsl(var(--success))", // Green
-    },
-    scenario: {
-        label: "Scenario Forecast",
-        color: "hsl(var(--warning))", // Orange for scenario
-    },
-    confidenceArea: {
-      label: "Confidence Interval",
-      color: "hsla(var(--success), 0.2)", // Light green semi-transparent for baseline
-    },
-     scenarioConfidenceArea: {
-      label: "Scenario Interval",
-      color: "hsla(var(--warning), 0.2)", // Light orange semi-transparent for scenario
-    },
+    historical: { label: "Historical Sales", color: "hsl(var(--primary))" },
+    baseline: { label: "Baseline Forecast", color: "hsl(var(--success))" },
+    scenario: { label: "Scenario Forecast", color: "hsl(var(--warning))" }, // Orange
+    baselineLower: { label: "Baseline Lower CI", color: "hsla(var(--success), 0.1)" },
+    baselineUpper: { label: "Baseline Upper CI", color: "hsla(var(--success), 0.1)" },
+    scenarioLower: { label: "Scenario Lower CI", color: "hsla(var(--warning), 0.1)" },
+    scenarioUpper: { label: "Scenario Upper CI", color: "hsla(var(--warning), 0.1)" },
   };
   
   const lastHistoricalEntry = historicalData.length > 0 ? historicalData[historicalData.length - 1] : { date: new Date().toISOString().split('T')[0], quantitySold: 0 };
@@ -67,6 +54,8 @@ export default function ForecastChart({ historicalData, baselinePredictions, sce
   const createPredictionPoints = (predictions: ForecastDemandOutput['predictions'] | null, keyPrefix: string) => {
     if (!predictions) return [];
     return [
+      // Start forecast line from last historical point for smooth transition
+      { date: lastHistoricalEntry.date, value: keyPrefix === 'baseline' ? lastHistoricalEntry.quantitySold : undefined, confidence: undefined, interval: undefined, isBridge: true },
       { dateLabel: 'Next 30 Days', date: getFutureDate(lastHistoricalDateObj, 30), value: predictions['30day'].demand, confidence: predictions['30day'].confidence, interval: predictions['30day'].confidenceInterval },
       { dateLabel: 'Next 60 Days', date: getFutureDate(lastHistoricalDateObj, 60), value: predictions['60day'].demand, confidence: predictions['60day'].confidence, interval: predictions['60day'].confidenceInterval },
       { dateLabel: 'Next 90 Days', date: getFutureDate(lastHistoricalDateObj, 90), value: predictions['90day'].demand, confidence: predictions['90day'].confidence, interval: predictions['90day'].confidenceInterval },
@@ -76,18 +65,13 @@ export default function ForecastChart({ historicalData, baselinePredictions, sce
         [`${keyPrefix}Lower`]: p.interval?.lowerBound,
         [`${keyPrefix}Upper`]: p.interval?.upperBound,
         confidence: p.confidence, 
-        timestamp: new Date(p.date).getTime() 
+        timestamp: new Date(p.date).getTime(),
+        isBridgePoint: p.isBridge,
     }));
   };
   
   const baselinePredictionPoints = createPredictionPoints(baselinePredictions, 'baseline');
-  const scenarioPredictionPoints = createPredictionPoints(scenarioPredictions, 'scenario');
-
-  const bridgePointHistoricalToBaseline = formattedHistoricalData.length > 0 && baselinePredictionPoints.length > 0 ? {
-    date: baselinePredictionPoints[0].date, 
-    historical: formattedHistoricalData[formattedHistoricalData.length - 1].historical,
-    timestamp: new Date(baselinePredictionPoints[0].date).getTime() -1, 
-  } : null;
+  const scenarioPredictionPoints = scenarioPredictions ? createPredictionPoints(scenarioPredictions, 'scenario') : [];
 
   let combinedDataMap = new Map<string, any>();
 
@@ -95,10 +79,6 @@ export default function ForecastChart({ historicalData, baselinePredictions, sce
     combinedDataMap.set(item.date, { ...combinedDataMap.get(item.date), ...item });
   });
   
-  if (bridgePointHistoricalToBaseline) {
-    combinedDataMap.set(bridgePointHistoricalToBaseline.date, { ...combinedDataMap.get(bridgePointHistoricalToBaseline.date), ...bridgePointHistoricalToBaseline });
-  }
-
   baselinePredictionPoints.forEach(p => {
     combinedDataMap.set(p.date, { ...combinedDataMap.get(p.date), ...p });
   });
@@ -108,7 +88,6 @@ export default function ForecastChart({ historicalData, baselinePredictions, sce
   });
   
   const combinedData = Array.from(combinedDataMap.values()).sort((a, b) => a.timestamp - b.timestamp);
-
 
   return (
     <Card className="bg-card border shadow-sm">
@@ -139,28 +118,29 @@ export default function ForecastChart({ historicalData, baselinePredictions, sce
                         const formattedValue = typeof value === 'number' ? value.toLocaleString() : value;
                         let label = name;
                         if (name === 'historical') label = chartConfig.historical.label as string;
-                        if (name === 'baseline') label = chartConfig.baseline.label as string;
-                        if (name === 'scenario') label = chartConfig.scenario.label as string;
+                        else if (name === 'baseline') label = chartConfig.baseline.label as string;
+                        else if (name === 'scenario') label = chartConfig.scenario.label as string;
                         
                         let tooltipText = `${formattedValue}`;
-                        if (name === 'baseline' && props.payload.baselineLower !== undefined && props.payload.baselineUpper !== undefined) {
-                            tooltipText += ` (CI: ${props.payload.baselineLower}-${props.payload.baselineUpper})`;
-                        } else if (name === 'scenario' && props.payload.scenarioLower !== undefined && props.payload.scenarioUpper !== undefined) {
-                            tooltipText += ` (CI: ${props.payload.scenarioLower}-${props.payload.scenarioUpper})`;
-                        } else if ((name === 'baseline' || name === 'scenario') && props.payload.confidence) {
+                         if ((name === 'baseline' || name === 'scenario') && props.payload.confidence) {
                            tooltipText += ` (Confidence: ${props.payload.confidence})`;
                         }
+                         if (name === 'baseline' && props.payload.baselineLower !== undefined && props.payload.baselineUpper !== undefined) {
+                             tooltipText += ` (CI: ${props.payload.baselineLower}-${props.payload.baselineUpper})`;
+                         } else if (name === 'scenario' && props.payload.scenarioLower !== undefined && props.payload.scenarioUpper !== undefined) {
+                             tooltipText += ` (CI: ${props.payload.scenarioLower}-${props.payload.scenarioUpper})`;
+                         }
                         return [tooltipText, label];
                     }}
                  />
-                <ChartLegend content={<ChartLegendContent />} wrapperStyle={{paddingTop: "10px"}} />
+                <Legend wrapperStyle={{paddingTop: "10px"}} />
                 <Line 
                     type="monotone" 
                     dataKey="historical" 
                     stroke={chartConfig.historical.color} 
                     strokeWidth={2} 
-                    dot={{ r: 3, fill: chartConfig.historical.color }} 
-                    activeDot={{ r: 5 }}
+                    dot={{ r: 2, fill: chartConfig.historical.color }} 
+                    activeDot={{ r: 4 }}
                     name={chartConfig.historical.label as string}
                     connectNulls={true}
                 />
@@ -168,21 +148,23 @@ export default function ForecastChart({ historicalData, baselinePredictions, sce
                     type="monotone"
                     dataKey="baselineUpper"
                     stackId="baselineCI"
-                    stroke={chartConfig.confidenceArea.color}
-                    fill={chartConfig.confidenceArea.color}
-                    name={chartConfig.confidenceArea.label as string}
+                    stroke={chartConfig.baselineUpper.color}
+                    fill={chartConfig.baselineUpper.color}
+                    name="" // Hide from legend directly
                     hide={!baselinePredictionPoints.some(p => p.baselineUpper !== undefined)} 
                     connectNulls={true}
+                    legendType="none"
                  />
                  <Area
                     type="monotone"
                     dataKey="baselineLower" 
                     stackId="baselineCI" 
-                    stroke={chartConfig.confidenceArea.color}
-                    fill={chartConfig.confidenceArea.color}
-                    name="" 
+                    stroke={chartConfig.baselineLower.color}
+                    fill={chartConfig.baselineLower.color}
+                    name="" // Hide from legend
                     hide={!baselinePredictionPoints.some(p => p.baselineLower !== undefined)}
                     connectNulls={true}
+                    legendType="none"
                  />
                 <Line 
                     type="monotone" 
@@ -193,29 +175,31 @@ export default function ForecastChart({ historicalData, baselinePredictions, sce
                     dot={{ r: 3, fill: chartConfig.baseline.color }} 
                     activeDot={{ r: 5 }}
                     name={chartConfig.baseline.label as string}
-                    connectNulls={true}
+                    connectNulls={false} // Do not connect if points are missing
                 />
                 {scenarioPredictions && (
                     <>
-                    <Area
+                     <Area
                         type="monotone"
                         dataKey="scenarioUpper"
                         stackId="scenarioCI"
-                        stroke={chartConfig.scenarioConfidenceArea.color}
-                        fill={chartConfig.scenarioConfidenceArea.color}
-                        name={chartConfig.scenarioConfidenceArea.label as string}
+                        stroke={chartConfig.scenarioUpper.color}
+                        fill={chartConfig.scenarioUpper.color}
+                        name=""
                         hide={!scenarioPredictionPoints.some(p => p.scenarioUpper !== undefined)}
                         connectNulls={true}
+                        legendType="none"
                     />
                      <Area
                         type="monotone"
                         dataKey="scenarioLower"
                         stackId="scenarioCI"
-                        stroke={chartConfig.scenarioConfidenceArea.color}
-                        fill={chartConfig.scenarioConfidenceArea.color}
+                        stroke={chartConfig.scenarioLower.color}
+                        fill={chartConfig.scenarioLower.color}
                         name=""
                         hide={!scenarioPredictionPoints.some(p => p.scenarioLower !== undefined)}
                         connectNulls={true}
+                        legendType="none"
                      />
                      <Line 
                         type="monotone" 
@@ -226,7 +210,7 @@ export default function ForecastChart({ historicalData, baselinePredictions, sce
                         dot={{ r: 3, fill: chartConfig.scenario.color }} 
                         activeDot={{ r: 5 }}
                         name={chartConfig.scenario.label as string}
-                        connectNulls={true}
+                        connectNulls={false}
                     />
                     </>
                 )}

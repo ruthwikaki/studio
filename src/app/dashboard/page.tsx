@@ -14,7 +14,10 @@ import {
   Award,
   Bell,
   Loader2,
-  BarChart
+  BarChart,
+  PackageCheck, // For Pending Orders if count is 0
+  Activity, // For Turnover Rate
+  Archive // For Out of Stock Items
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,26 +32,18 @@ import { Badge } from "@/components/ui/badge";
 const recentActivities = [
   { id: 1, type: "Inventory Update", description: "SKU001 quantity changed to 145", time: "2m ago" },
   { id: 2, type: "New Order", description: "Order #1023 placed", time: "15m ago" },
-  { id: 3, type: "Low Stock Alert", description: "SKU004 is low on stock", time: "1h ago" },
+  { id:3, type: "Forecast Generated", description: "Demand forecast for SKU002 updated", time: "45m ago" },
   { id: 4, type: "Supplier Update", description: "ApparelCo contact updated", time: "3h ago" },
 ];
 
 export default function DashboardPage() {
   const router = useRouter();
   const { toast } = useToast();
-  const { data: kpiData, isLoading: kpisLoading, isError: kpisError, error: kpisFetchError } = useAnalyticsDashboard({ refetchInterval: 30000 });
+  const { data: kpiData, isLoading: kpisLoading, isError: kpisError, error: kpisFetchError } = useAnalyticsDashboard({ refetchInterval: 60000 }); // Refetch every 60 seconds
 
   const handleViewAlerts = async () => {
     toast({ title: "Fetching Alerts...", description: "This may take a moment." });
-    try {
-      const response = await fetch('/api/inventory/alerts');
-      if (!response.ok) throw new Error('Failed to fetch alerts');
-      const result = await response.json();
-      const alertCount = result.data?.length || 0;
-      toast({ title: "Inventory Alerts", description: `Found ${alertCount} item(s) needing attention.` });
-    } catch (err: any) {
-      toast({ title: "Error Fetching Alerts", description: err.message, variant: "destructive" });
-    }
+    router.push('/inventory?lowStockOnly=true'); // Navigate to inventory page with filter
   };
 
   const kpis = kpiData?.data;
@@ -57,43 +52,44 @@ export default function DashboardPage() {
     <div className="flex flex-col gap-6">
       <h1 className="text-3xl font-headline font-semibold text-foreground">Dashboard Overview</h1>
       
-      {kpisError && <p className="text-destructive">Error loading KPIs: {kpisFetchError?.message}</p>}
+      {kpisError && <Card className="bg-destructive/10 border-destructive"><CardContent className="p-4 text-destructive-foreground">{kpisFetchError?.message || "Error loading dashboard KPIs."}</CardContent></Card>}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {kpisLoading ? (
           <>
             <DashboardCard title="Total Inventory Value"><Skeleton className="h-8 w-3/4 mt-1" /><Skeleton className="h-4 w-1/2 mt-1" /></DashboardCard>
             <DashboardCard title="Low Stock Items"><Skeleton className="h-8 w-1/2 mt-1" /><Skeleton className="h-4 w-3/4 mt-1" /></DashboardCard>
+            <DashboardCard title="Out of Stock Items"><Skeleton className="h-8 w-1/2 mt-1" /><Skeleton className="h-4 w-3/4 mt-1" /></DashboardCard>
             <DashboardCard title="Pending Orders"><Skeleton className="h-8 w-1/2 mt-1" /><Skeleton className="h-4 w-1/2 mt-1" /></DashboardCard>
-            <DashboardCard title="Today's Revenue"><Skeleton className="h-8 w-3/4 mt-1" /><Skeleton className="h-4 w-1/2 mt-1" /></DashboardCard>
           </>
         ) : (
           <>
             <DashboardCard
               title="Total Inventory Value"
               icon={DollarSign}
-              value={kpis?.totalInventoryValue ? `$${kpis.totalInventoryValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : "N/A"}
-              description={kpis?.turnoverRate ? `Turnover: ${kpis.turnoverRate}` : "Calculating..."}
+              value={kpis?.totalInventoryValue !== undefined ? `$${kpis.totalInventoryValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : <Skeleton className="h-8 w-3/4 mt-1" />}
+              description={kpis?.turnoverRate !== undefined ? `Turnover: ${kpis.turnoverRate.toFixed(1)}x` : "Valuation of current stock."}
             />
             <DashboardCard
               title="Low Stock Items"
               icon={AlertTriangle}
-              value={kpis?.lowStockItemsCount ?? "N/A"}
-              description="Needs immediate attention"
-              valueClassName="text-warning"
+              value={kpis?.lowStockItemsCount ?? <Skeleton className="h-8 w-1/2 mt-1" />}
+              description={`${kpis?.lowStockItemsCount || 0} items below reorder point`}
+              valueClassName={kpis && kpis.lowStockItemsCount > 0 ? "text-warning" : "text-success"}
             />
              <DashboardCard
               title="Out of Stock Items"
-              icon={AlertTriangle}
-              value={kpis?.outOfStockItemsCount ?? "N/A"}
-              description="Critical - restock now"
-              valueClassName="text-destructive"
+              icon={Archive}
+              value={kpis?.outOfStockItemsCount ?? <Skeleton className="h-8 w-1/2 mt-1" />}
+              description={`${kpis?.outOfStockItemsCount || 0} items completely out`}
+              valueClassName={kpis && kpis.outOfStockItemsCount > 0 ? "text-destructive" : "text-success"}
             />
             <DashboardCard
-              title="Pending Orders" /* Placeholder */
-              icon={ClipboardList}
-              value={5}
-              description="Awaiting fulfillment"
+              title="Pending Orders"
+              icon={kpis?.pendingOrdersCount === 0 ? PackageCheck : ClipboardList}
+              value={kpis?.pendingOrdersCount ?? <Skeleton className="h-8 w-1/2 mt-1" />}
+              description={kpis?.pendingOrdersCount === 1 ? "Order awaiting action" : "Orders awaiting action"}
+              valueClassName={kpis && kpis.pendingOrdersCount > 0 ? "text-blue-500" : "text-muted-foreground"}
             />
           </>
         )}
@@ -161,25 +157,25 @@ export default function DashboardPage() {
         <Card className="shadow-lg">
           <CardHeader>
             <CardTitle className="font-headline text-lg flex items-center">
-              <TrendingUp className="h-5 w-5 mr-2 text-primary" />
-              Inventory Turnover
+              <Activity className="h-5 w-5 mr-2 text-primary" /> {/* Changed icon */}
+              Inventory Turnover Rate
             </CardTitle>
-             <CardDescription>Live D3.js chart showing inventory turnover trends.</CardDescription>
+             <CardDescription>Efficiency of stock management over time.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col items-center justify-center text-center min-h-[200px] p-4">
             {kpisLoading ? <Loader2 className="h-8 w-8 animate-spin text-primary" /> : 
-            kpis?.turnoverRate ? 
+            kpis?.turnoverRate !== undefined ? 
             (
               <div className="text-center">
                 <p className="text-4xl font-bold text-primary">{kpis.turnoverRate.toFixed(1)}x</p>
-                <p className="text-sm text-muted-foreground mt-1">Calculated turnover rate</p>
+                <p className="text-sm text-muted-foreground mt-1">Calculated based on last 90 days</p>
               </div>
             ) :
             (
               <div className="w-full h-full flex flex-col items-center justify-center bg-muted/30 rounded-md p-4">
                 <BarChart className="h-16 w-16 text-primary/50 mb-3" />
-                <p className="text-sm text-muted-foreground">Interactive Inventory Turnover Chart (D3.js)</p>
-                <p className="text-xs text-muted-foreground">Displays trends, allows timeframe selection, and updates in real-time.</p>
+                <p className="text-sm text-muted-foreground">Turnover Chart (Soon)</p>
+                <p className="text-xs text-muted-foreground">Displays trends and allows timeframe selection.</p>
               </div>
             )
             }
@@ -190,22 +186,16 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle className="font-headline text-lg flex items-center">
               <Award className="h-5 w-5 mr-2 text-primary" />
-              Top 5 Products by Value
+              Top Performing SKUs
             </CardTitle>
-            <CardDescription>Smart table displaying top products with inline editing and filtering.</CardDescription>
+            <CardDescription>Based on sales velocity or revenue (Coming Soon).</CardDescription>
           </CardHeader>
           <CardContent className="min-h-[200px] p-4">
             <div className="w-full h-full flex flex-col items-center justify-center bg-muted/30 rounded-md p-4">
               <ListChecks className="h-16 w-16 text-primary/50 mb-3" />
-              <p className="text-sm text-muted-foreground">Smart Table: Top Products</p>
-              <p className="text-xs text-muted-foreground text-center">Features column customization, advanced filtering, bulk operations, and real-time updates.</p>
+              <p className="text-sm text-muted-foreground">Top SKUs Table</p>
+              <p className="text-xs text-muted-foreground text-center">Dynamic table with sortable columns (e.g., sales, margin).</p>
             </div>
-            {/* Placeholder for actual smart table data */}
-            {/* <ul className="space-y-2 text-sm mt-3">
-              {["Product A - $15,000", "Product B - $12,500", "Product C - $9,800", "Product D - $7,200", "Product E - $5,500"].map(item => (
-                 <li key={item} className="flex justify-between"><span>{item.split(" - ")[0]}</span> <Badge variant="secondary">{item.split(" - ")[1]}</Badge></li>
-              ))}
-            </ul> */}
           </CardContent>
         </Card>
       </div>

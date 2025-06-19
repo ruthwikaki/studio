@@ -4,11 +4,11 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label"; // Added missing import
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { FileDown, Filter, MoreHorizontal, PlusCircle, Trash2, Edit3, UploadCloud, Loader2, Search, Package, TrendingDown, BarChartHorizontal, AlertCircle, Palette } from 'lucide-react';
-import type { InventoryItemDocument } from '@/lib/types/firestore';
+import type { InventoryStockDocument } from '@/lib/types/firestore';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -16,14 +16,14 @@ import { useInventory, useUpdateInventoryItem } from '@/hooks/useInventory';
 import { Skeleton } from '@/components/ui/skeleton';
 import Image from 'next/image';
 import { Progress } from '@/components/ui/progress';
+import { ProductFormModal } from '@/components/inventory/ProductFormModal'; // Import the modal
 
-const calculateStockValue = (item: InventoryItemDocument) => item.quantity * item.unitCost;
+const calculateStockValue = (item: InventoryStockDocument) => item.quantity * item.unitCost;
 
-const getStatus = (item: InventoryItemDocument): 'In Stock' | 'Low Stock' | 'Out of Stock' | 'Overstocked' => {
-  // Assuming 'overstocked' means quantity > reorderPoint * 2 (example threshold)
-  if (item.quantity > item.reorderPoint * 2.5 && item.reorderPoint > 0) return 'Overstocked';
+const getStatus = (item: InventoryStockDocument): 'In Stock' | 'Low Stock' | 'Out of Stock' | 'Overstocked' => {
+  if (item.quantity > (item.reorderPoint || 0) * 2.5 && (item.reorderPoint || 0) > 0) return 'Overstocked';
   if (item.quantity <= 0) return 'Out of Stock';
-  if (item.quantity <= item.reorderPoint) return 'Low Stock';
+  if (item.quantity <= (item.reorderPoint || 0)) return 'Low Stock';
   return 'In Stock';
 };
 
@@ -32,13 +32,11 @@ const getStatusColor = (status: 'In Stock' | 'Low Stock' | 'Out of Stock' | 'Ove
     case 'In Stock': return 'bg-success';
     case 'Low Stock': return 'bg-warning';
     case 'Out of Stock': return 'bg-destructive';
-    case 'Overstocked': return 'bg-sky-500'; // A blue for overstocked
+    case 'Overstocked': return 'bg-sky-500';
     default: return 'bg-muted';
   }
 };
 
-
-// Debounce function
 const debounce = <F extends (...args: any[]) => any>(func: F, waitFor: number) => {
   let timeout: ReturnType<typeof setTimeout> | null = null;
   return (...args: Parameters<F>): Promise<ReturnType<F>> =>
@@ -56,13 +54,14 @@ export default function InventoryPage() {
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterStockHealth, setFilterStockHealth] = useState('all');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<InventoryStockDocument | null>(null);
 
   const { toast } = useToast();
 
   const inventoryFilters = useMemo(() => ({
     searchTerm: debouncedSearchTerm,
     category: filterCategory,
-    // Note: stock health filter would need to be applied client-side or API needs to support it
   }), [debouncedSearchTerm, filterCategory]);
 
   const {
@@ -75,9 +74,9 @@ export default function InventoryPage() {
     error,
   } = useInventory(inventoryFilters);
 
-  const updateItemMutation = useUpdateInventoryItem(); // Kept for potential future use (e.g. quick edit on card)
+  const updateItemMutation = useUpdateInventoryItem();
 
-  const debouncedSetSearchTerm = useCallback(debounce(setDebouncedSearchTerm, 300), []);
+  const debouncedSetSearchTerm = useCallback(debounce(setDebouncedSearchTerm, 500), []);
 
   useEffect(() => {
     debouncedSetSearchTerm(searchTerm);
@@ -102,7 +101,17 @@ export default function InventoryPage() {
     return Array.from(uniqueCategories);
   }, [data]);
 
-  if (isError && !isLoading) { // Ensure error is shown only if not initially loading
+  const handleOpenModal = (product: InventoryStockDocument | null = null) => {
+    setEditingProduct(product);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setEditingProduct(null);
+  };
+
+  if (isError && !isLoading) { 
     return <div className="text-destructive-foreground bg-destructive p-4 rounded-md">Error loading inventory: {error?.message}</div>;
   }
 
@@ -117,14 +126,13 @@ export default function InventoryPage() {
             <Button variant="outline" asChild>
               <Link href="/data-import"><UploadCloud className="mr-2 h-4 w-4" /> Upload Data</Link>
             </Button>
-            <Button className="bg-accent hover:bg-accent/90 text-accent-foreground" onClick={() => toast({ title: "Add Product Clicked", description: "Product creation wizard would appear here."})}>
+            <Button className="bg-accent hover:bg-accent/90 text-accent-foreground" onClick={() => handleOpenModal()}>
               <PlusCircle className="mr-2 h-4 w-4" /> Add Product
             </Button>
         </div>
       </div>
 
     <div className="flex flex-col md:flex-row gap-6">
-        {/* Filters Sidebar Placeholder */}
         <Card className="w-full md:w-1/4 lg:w-1/5 shadow-lg md:sticky md:top-20 md:self-start h-fit">
             <CardHeader>
                 <CardTitle className="font-headline text-lg flex items-center"><Filter className="mr-2 h-5 w-5 text-primary"/>Filters</CardTitle>
@@ -185,9 +193,7 @@ export default function InventoryPage() {
             </CardContent>
         </Card>
 
-        {/* Main Content Area */}
         <div className="flex-1 space-y-6">
-            {/* Bulk Actions Toolbar Placeholder */}
             <Card className="shadow-md">
                 <CardHeader>
                     <CardTitle className="font-headline text-lg">Bulk Actions</CardTitle>
@@ -203,14 +209,12 @@ export default function InventoryPage() {
                     <Button variant="outline" size="sm" onClick={() => toast({ title: "Bulk Edit Clicked", description: "Bulk edit modal would appear."})}>
                         <Edit3 className="mr-2 h-4 w-4" /> Bulk Edit
                     </Button>
-                    <p className="text-sm text-primary ml-auto">✨ Smart Suggestion: 5 items need reordering (Placeholder)</p>
                 </CardContent>
             </Card>
 
-            {/* Smart Inventory Cards View */}
-            {isLoading && !data ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                    {Array.from({ length: 8 }).map((_, i) => (
+            {isLoading && !data?.pages.length ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
+                    {Array.from({ length: 6 }).map((_, i) => (
                         <Card key={`skeleton-card-${i}`} className="shadow-md">
                             <CardHeader className="p-4">
                                 <Skeleton className="h-32 w-full rounded-md" />
@@ -229,22 +233,23 @@ export default function InventoryPage() {
                     ))}
                 </div>
             ) : allItems.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
                     {allItems.map((item) => {
                         const status = getStatus(item);
-                        const stockPercentage = item.reorderPoint > 0 ? Math.min((item.quantity / (item.reorderPoint * 1.5)) * 100, 100) : item.quantity > 0 ? 100 : 0; // Example percentage, max 100
+                        const stockPercentage = (item.reorderPoint || 0) > 0 ? Math.min((item.quantity / ((item.reorderPoint || 0) * 1.5)) * 100, 100) : item.quantity > 0 ? 100 : 0;
                         return (
                             <Card key={item.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-200 border relative overflow-hidden">
                                 <div className={cn("absolute top-0 left-0 h-1.5 w-full", getStatusColor(status))}></div>
-                                <CardHeader className="p-4 pt-6"> {/* Added pt-6 for space from status bar */}
+                                <CardHeader className="p-4 pt-6">
                                     <div className="aspect-square w-full bg-muted rounded-md flex items-center justify-center mb-3">
                                         <Image 
-                                            src={item.imageUrl || `https://placehold.co/300x300.png?text=${item.name.substring(0,10)}`} 
+                                            src={item.imageUrl || `https://placehold.co/300x300.png?text=${encodeURIComponent(item.name.substring(0,10))}`} 
                                             alt={item.name}
                                             width={150} 
                                             height={150}
-                                            data-ai-hint="product photo" // Generalized hint
-                                            className="object-contain h-32 w-32 rounded" // Ensure image fits
+                                            data-ai-hint="product photo"
+                                            className="object-contain h-32 w-32 rounded"
+                                            onError={(e) => { e.currentTarget.src = `https://placehold.co/300x300.png?text=Error`; }}
                                         />
                                     </div>
                                     <CardTitle className="font-headline text-base line-clamp-2 h-[2.5em]">{item.name}</CardTitle>
@@ -260,15 +265,12 @@ export default function InventoryPage() {
                                         {status !== "In Stock" && <p className={cn("text-xs font-medium mt-1", getStatusColor(status).replace("bg-","text-"))}>{status}</p>}
                                     </div>
                                     <p className="text-xs text-muted-foreground">
-                                        Days to Stockout: <span className="font-medium text-foreground">~N/A days</span> (AI Prediction)
+                                        Value: <span className="font-medium text-foreground">${calculateStockValue(item).toFixed(2)}</span>
                                     </p>
-                                    <div className="h-10 bg-muted/50 rounded flex items-center justify-center text-xs text-muted-foreground">
-                                        7-Day Sales Sparkline (Placeholder)
-                                    </div>
                                 </CardContent>
                                 <CardFooter className="p-4 border-t mt-auto">
-                                    <Button size="sm" className="w-full bg-primary hover:bg-primary/90" onClick={() => toast({title: "Reorder Clicked", description: `Reordering ${item.name}`})}>
-                                        <Package className="mr-2 h-4 w-4" /> Reorder
+                                    <Button size="sm" className="w-full bg-primary hover:bg-primary/90" onClick={() => handleOpenModal(item)}>
+                                        <Edit3 className="mr-2 h-4 w-4" /> Edit
                                     </Button>
                                     <DropdownMenu>
                                         <DropdownMenuTrigger asChild>
@@ -277,9 +279,9 @@ export default function InventoryPage() {
                                             </Button>
                                         </DropdownMenuTrigger>
                                         <DropdownMenuContent align="end">
-                                            <DropdownMenuItem onClick={() => toast({ title: "View Details", description: `Viewing ${item.name}`})}>View Details</DropdownMenuItem>
-                                            <DropdownMenuItem onClick={() => toast({ title: "Edit Product", description: `Editing ${item.name}`})}>Edit Product</DropdownMenuItem>
-                                            <DropdownMenuItem className="text-destructive focus:text-destructive-foreground focus:bg-destructive/90" onClick={() => toast({ title: "Delete Product", description: `Deleting ${item.name}`})}>Delete Product</DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => toast({ title: "View Details Clicked (Soon)", description: `Detailed view for ${item.name}`})}>View Details</DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => toast({ title: "Reorder Clicked (Soon)", description: `Reordering ${item.name}`})}>Reorder</DropdownMenuItem>
+                                            <DropdownMenuItem className="text-destructive focus:text-destructive-foreground focus:bg-destructive/90" onClick={() => toast({ title: "Delete Product (Soon)", description: `Deleting ${item.name}`})}>Delete Product</DropdownMenuItem>
                                         </DropdownMenuContent>
                                     </DropdownMenu>
                                 </CardFooter>
@@ -310,9 +312,13 @@ export default function InventoryPage() {
             )}
         </div>
     </div>
+     {isModalOpen && (
+        <ProductFormModal
+          isOpen={isModalOpen}
+          onClose={handleCloseModal}
+          product={editingProduct}
+        />
+      )}
     </div>
   );
 }
-
-
-    

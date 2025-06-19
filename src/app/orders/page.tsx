@@ -1,13 +1,13 @@
 
 "use client";
 
-import { ClipboardList, Loader2, FilePlus2, ShoppingCart } from 'lucide-react';
+import { ClipboardList, Loader2, FilePlus2, ShoppingCart, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from '@/components/ui/button';
 import { useReorderSuggestions, useCreatePurchaseOrder } from '@/hooks/useOrders';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
-import type { OptimizeReordersInput } from '@/ai/flows/reorderOptimization'; // For item structure if needed
+import type { OptimizeReordersOutput } from '@/ai/flows/reorderOptimization'; 
 
 
 export default function OrdersPage() {
@@ -15,14 +15,24 @@ export default function OrdersPage() {
   const createPoMutation = useCreatePurchaseOrder();
   const { toast } = useToast();
 
-  const handleCreatePo = (recommendation: NonNullable<typeof suggestionsData>['recommendations'][number]) => {
+  const handleCreatePo = (recommendation: NonNullable<OptimizeReordersOutput>['recommendations'][number]) => {
+    if (!recommendation.optimalReorderQuantity || recommendation.optimalReorderQuantity <=0 ) {
+      toast({title: "Cannot Create PO", description: "Optimal reorder quantity is zero or invalid.", variant: "destructive"});
+      return;
+    }
+    if (recommendation.estimatedCost <= 0 && recommendation.optimalReorderQuantity > 0) {
+       toast({title: "Warning: Zero Cost PO", description: "Creating PO with zero estimated cost. Please verify pricing.", variant: "default"});
+    }
+
+
     const poPayload = {
       items: [{ 
         sku: recommendation.sku, 
         name: recommendation.productName,
-        productId: recommendation.sku, // Assuming SKU is product ID for simplicity
+        productId: recommendation.sku, 
         quantity: recommendation.optimalReorderQuantity,
-        unitCost: recommendation.estimatedCost / recommendation.optimalReorderQuantity // Estimate unit cost
+        // Ensure unitCost is not NaN or Infinity if optimalReorderQuantity is 0
+        unitPrice: recommendation.optimalReorderQuantity > 0 ? (recommendation.estimatedCost / recommendation.optimalReorderQuantity) : 0,
       }],
       supplierId: recommendation.selectedSupplierId,
       notes: `Automated PO based on reorder suggestion. ${recommendation.notes || ''}`,
@@ -66,10 +76,14 @@ export default function OrdersPage() {
             </div>
           )}
           {isErrorSuggestions && (
-            <p className="text-destructive">Error loading suggestions: {suggestionsError?.message}</p>
+            <div className="flex flex-col items-center justify-center text-center py-8 text-destructive">
+              <AlertCircle className="h-12 w-12 mb-3" />
+              <p className="font-semibold">Error loading reorder suggestions:</p>
+              <p className="text-sm">{suggestionsError?.message || "An unknown error occurred."}</p>
+            </div>
           )}
           {!isLoadingSuggestions && !isErrorSuggestions && (!suggestionsData || suggestionsData.recommendations.length === 0) && (
-            <p className="text-muted-foreground text-center py-8">No reorder suggestions at the moment. All stock levels are optimal or data is insufficient.</p>
+            <p className="text-muted-foreground text-center py-8">No reorder suggestions at the moment. All stock levels appear optimal or data is insufficient for analysis.</p>
           )}
           {suggestionsData && suggestionsData.recommendations.length > 0 && (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -77,24 +91,24 @@ export default function OrdersPage() {
                 <Card key={rec.sku + index} className="flex flex-col">
                   <CardHeader>
                     <CardTitle className="text-lg font-headline">{rec.productName} <span className="text-sm text-muted-foreground">({rec.sku})</span></CardTitle>
-                    <CardDescription>Current: {rec.currentQuantity} units. Reorder Point: {rec.optimizedReorderPoint} units.</CardDescription>
+                    <CardDescription>Current: {rec.currentQuantity} units. Optimized Reorder Point: {rec.optimizedReorderPoint} units.</CardDescription>
                   </CardHeader>
-                  <CardContent className="flex-grow space-y-2">
-                    <p className="text-sm"><span className="font-semibold">Suggested Quantity:</span> {rec.optimalReorderQuantity}</p>
-                    <p className="text-sm"><span className="font-semibold">Est. Cost:</span> ${rec.estimatedCost.toFixed(2)}</p>
-                    {rec.selectedSupplierId && <p className="text-sm"><span className="font-semibold">Supplier:</span> {rec.selectedSupplierId}</p>}
+                  <CardContent className="flex-grow space-y-2 text-sm">
+                    <p><span className="font-semibold">Suggested Quantity:</span> {rec.optimalReorderQuantity}</p>
+                    <p><span className="font-semibold">Est. Cost:</span> ${rec.estimatedCost.toFixed(2)}</p>
+                    {rec.selectedSupplierId && <p><span className="font-semibold">Supplier:</span> {rec.selectedSupplierId}</p>}
                     {rec.notes && <p className="text-xs text-muted-foreground italic">Note: {rec.notes}</p>}
                   </CardContent>
                   <CardFooter>
                     <Button 
                       onClick={() => handleCreatePo(rec)} 
-                      disabled={createPoMutation.isPending && createPoMutation.variables?.items[0].sku === rec.sku}
+                      disabled={(createPoMutation.isPending && createPoMutation.variables?.items[0].sku === rec.sku) || rec.optimalReorderQuantity <= 0}
                       className="w-full"
                     >
                       {createPoMutation.isPending && createPoMutation.variables?.items[0].sku === rec.sku 
                         ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> 
                         : <FilePlus2 className="mr-2 h-4 w-4" />}
-                      Create PO for this Item
+                      {rec.optimalReorderQuantity <= 0 ? "No Reorder Needed" : "Create PO"}
                     </Button>
                   </CardFooter>
                 </Card>
@@ -108,16 +122,16 @@ export default function OrdersPage() {
         <CardHeader>
           <CardTitle className="font-headline flex items-center">
             <ClipboardList className="h-6 w-6 mr-2 text-primary" />
-            Order History
+            Order History & Tracking
           </CardTitle>
            <CardDescription>
-            A list of your past purchase and sales orders will appear here. (Feature in development)
+            A comprehensive list of your past and current purchase and sales orders. (Smart Table feature coming soon)
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center justify-center text-center min-h-[200px]">
           <ClipboardList className="h-12 w-12 text-muted-foreground mb-4" />
           <p className="text-lg text-muted-foreground">
-            Order history tracking is coming soon.
+            Advanced order history table with filtering, sorting, and status tracking is planned.
           </p>
         </CardContent>
       </Card>
