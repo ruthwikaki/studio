@@ -32,8 +32,7 @@ try {
   if (!admin.apps.length) {
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
-      // Firestore Admin SDK typically does not need databaseURL to be set explicitly
-      // databaseURL: `https://${serviceAccount.project_id}.firebaseio.com` // This is for Realtime Database
+      databaseURL: `https://${serviceAccount.project_id}.firebaseio.com`
     });
     console.log(`[Seed Script] Firebase Admin SDK initialized for project: ${serviceAccount.project_id}`);
   } else {
@@ -356,7 +355,7 @@ const mockChatSessions: (Omit<ChatSessionDocument, 'id' | 'createdAt' | 'lastMes
     id: `chat_seed_${String(index + 1).padStart(3, '0')}`,
     companyId: MOCK_COMPANY_ID,
     ...chat,
-    messages: chat.messages.map(msg => ({...msg, timestamp: msg.timestamp instanceof Date ? AdminTimestamp.fromDate(msg.timestamp) : m.timestamp })),
+    messages: chat.messages.map(msg => ({...msg, timestamp: msg.timestamp instanceof Date ? AdminTimestamp.fromDate(msg.timestamp) : msg.timestamp })),
     createdAt: new Date(Date.now() - (index + 2) * 60 * 60 * 1000),
     lastMessageAt: new Date(Date.now() - (index + 1) * 59 * 60 * 1000),
 }));
