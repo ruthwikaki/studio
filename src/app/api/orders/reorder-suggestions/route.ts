@@ -1,73 +1,104 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-// import { getFirestoreAdmin } from 'firebase-admin/firestore'; // Placeholder
-// import { verifyAuthToken } from '@/lib/firebase/admin-auth'; // Placeholder
+import { db, AdminTimestamp } from '@/lib/firebase/admin';
+import { verifyAuthToken } from '@/lib/firebase/admin-auth';
 import { optimizeReorders, OptimizeReordersInput, OptimizeReordersOutput } from '@/ai/flows/reorderOptimization';
-import type { InventoryItemDocument, SupplierDocument } from '@/lib/types/firestore'; // Assuming you have supplier types
-
-// Placeholder for Firestore instance
-// const db = getFirestoreAdmin();
+import type { InventoryStockDocument, SalesHistoryDocument, SupplierDocument, SupplierProductInfo } from '@/lib/types/firestore';
 
 export async function GET(request: NextRequest) {
-  // TODO: Implement Firebase Auth token verification
-  // const { uid } = await verifyAuthToken(request);
-  // if (!uid) {
-  //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  // }
-  // const userId = uid;
+  let companyId: string;
+  try {
+    ({ companyId } = await verifyAuthToken(request));
+  } catch (authError: any) {
+    return NextResponse.json({ error: authError.message || 'Authentication failed' }, { status: 401 });
+  }
 
   try {
-    // Fetch current inventory
-    // const inventorySnapshot = await db.collection('inventory').where('userId', '==', userId).get();
-    // const currentInventory: Partial<InventoryItemDocument>[] = inventorySnapshot.docs.map(doc => {
-    //     const data = doc.data();
-    //     return { sku: data.sku, name: data.name, quantity: data.quantity, unitCost: data.unitCost, reorderPoint: data.reorderPoint };
-    // });
-    const MOCK_INVENTORY = [
-        { sku: "SKU001", name: "Blue T-Shirt", quantity: 50, unitCost: 10, reorderPoint: 20},
-        { sku: "SKU004", name: "Yoga Mat", quantity: 5, unitCost: 30, reorderPoint: 10},
-    ];
+    // 1. Fetch current inventory for the company
+    const inventorySnapshot = await db.collection('inventory').where('companyId', '==', companyId).get();
+    const currentInventory = inventorySnapshot.docs.map(doc => {
+      const data = doc.data() as InventoryStockDocument;
+      // Select relevant fields for the AI flow input
+      return { 
+        sku: data.sku, 
+        name: data.name, 
+        quantity: data.quantity, 
+        unitCost: data.unitCost, 
+        reorderPoint: data.reorderPoint,
+        category: data.category,
+        // Any other fields the `optimizeReorders` flow might find useful
+      };
+    });
 
-    // Fetch historical demand (simplified - this would be more complex)
-    // For now, we'll pass a placeholder or assume it's part of AI's general knowledge if not explicitly provided
-    const MOCK_HISTORICAL_DEMAND = [
-        { sku: "SKU001", salesHistory: [{ date: "2023-01-15", quantitySold: 5 }, { date: "2023-02-10", quantitySold: 7 }] },
-        { sku: "SKU004", salesHistory: [{ date: "2023-03-01", quantitySold: 2 }] },
-    ];
+    if (currentInventory.length === 0) {
+      return NextResponse.json({ data: { recommendations: [] }, message: "No inventory items found to generate suggestions." });
+    }
+
+    // 2. Fetch historical demand (Simplified: total sales in last 90 days per product)
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
     
-    // Fetch supplier lead times (simplified)
-    // const suppliersSnapshot = await db.collection('suppliers').where('userId', '==', userId).get();
-    // const supplierLeadTimes: any[] = suppliersSnapshot.docs.map(doc => {
-    //   const data = doc.data() as SupplierDocument;
-    //   return { sku: "some_sku", supplierId: data.id, leadTimeDays: data.leadTimeDays || 14 }; // Simplified mapping
-    // });
-     const MOCK_SUPPLIER_LEAD_TIMES = [
-        { sku: "SKU001", supplierId: "SUP01", leadTimeDays: 14 },
-        { sku: "SKU004", supplierId: "SUP02", leadTimeDays: 7 },
-    ];
+    const historicalDemandMap: Record<string, { sku: string; salesHistory: { date: string; quantitySold: number }[] }> = {};
 
+    for (const item of currentInventory) {
+      const salesSnapshot = await db.collection('sales_history')
+        .where('companyId', '==', companyId)
+        .where('sku', '==', item.sku)
+        .where('date', '>=', ninetyDaysAgo)
+        .get();
+      
+      const salesHistory = salesSnapshot.docs.map(doc => {
+        const sale = doc.data() as SalesHistoryDocument;
+        return {
+          date: (sale.date as AdminTimestamp).toDate().toISOString().split('T')[0],
+          quantitySold: sale.quantity,
+        };
+      });
+      if (salesHistory.length > 0) {
+        historicalDemandMap[item.sku] = { sku: item.sku, salesHistory };
+      }
+    }
+    const historicalDemand = Object.values(historicalDemandMap);
 
-    // Placeholder for bulk discounts and cash flow constraints - can be passed if available
-    const bulkDiscountThresholds = JSON.stringify([
-      { supplierId: "SUP01", sku: "SKU001", thresholds: [{ minQuantity: 100, discountPercentage: 5 }] }
-    ]);
-    const cashFlowConstraints = "Keep total reorder cost under $5000 this cycle.";
+    // 3. Fetch supplier lead times and discount info
+    const suppliersSnapshot = await db.collection('suppliers').where('companyId', '==', companyId).get();
+    const supplierLeadTimes: { sku: string; supplierId: string; leadTimeDays: number }[] = [];
+    const bulkDiscountThresholds: any[] = []; // Define a proper type if schema supports it
+
+    suppliersSnapshot.docs.forEach(doc => {
+      const supplier = doc.data() as SupplierDocument;
+      if (supplier.productsSupplied) {
+        supplier.productsSupplied.forEach((product: SupplierProductInfo) => {
+          if (product.sku && supplier.leadTimeDays !== undefined) {
+            supplierLeadTimes.push({
+              sku: product.sku,
+              supplierId: supplier.id,
+              leadTimeDays: supplier.leadTimeDays,
+            });
+          }
+          // Example for bulk discounts - assuming a structure
+          // if (supplier.discounts && supplier.discounts[product.sku]) {
+          //   bulkDiscountThresholds.push({ supplierId: supplier.id, sku: product.sku, thresholds: supplier.discounts[product.sku] });
+          // }
+        });
+      }
+    });
 
     const reorderInput: OptimizeReordersInput = {
-      currentInventory: JSON.stringify(MOCK_INVENTORY),
-      historicalDemand: JSON.stringify(MOCK_HISTORICAL_DEMAND),
-      supplierLeadTimes: JSON.stringify(MOCK_SUPPLIER_LEAD_TIMES),
-      bulkDiscountThresholds,
-      cashFlowConstraints,
+      currentInventory: JSON.stringify(currentInventory),
+      historicalDemand: JSON.stringify(historicalDemand),
+      supplierLeadTimes: JSON.stringify(supplierLeadTimes),
+      bulkDiscountThresholds: bulkDiscountThresholds.length > 0 ? JSON.stringify(bulkDiscountThresholds) : undefined,
+      // cashFlowConstraints: "Optional cash flow constraints description", // Example
     };
 
     const recommendations: OptimizeReordersOutput = await optimizeReorders(reorderInput);
 
     return NextResponse.json({ data: recommendations });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error generating reorder suggestions:', error);
-    const message = error instanceof Error ? error.message : 'Failed to generate reorder suggestions.';
+    const message = error.message || 'Failed to generate reorder suggestions.';
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
