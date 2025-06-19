@@ -29,11 +29,13 @@ export interface UserSettings {
   // Add other user-specific settings here
 }
 
+export type UserRole = 'owner' | 'admin' | 'manager' | 'viewer';
+
 export interface UserDocument {
   uid: string; // Firebase Auth UID, also used as Firestore document ID
   email: string | null;
   companyId: string; // Link to the companies collection document ID
-  role: 'owner' | 'admin' | 'manager' | 'viewer';
+  role: UserRole;
   displayName?: string;
   photoURL?: string;
   createdAt: Timestamp;
@@ -309,6 +311,7 @@ export interface DocumentMetadata {
   processedAt?: Timestamp; // When Genkit flow finished
   approvedAt?: Timestamp;
   uploadedBy?: string; // UID of user
+  lastUpdatedBy?: string; // UID of user
   approvedBy?: string; // UID of user
 }
 
@@ -402,4 +405,68 @@ export interface AnalyticsDocument {
 // --------------------
 export interface CounterDocument {
     count: number;
+}
+
+
+// --------------------
+// Notifications Collection
+// --------------------
+export type NotificationType = 
+  | 'low_stock' 
+  | 'order_status_changed' 
+  | 'document_processed' 
+  | 'supplier_score_updated'
+  | 'new_forecast_available'
+  | 'generic_alert';
+
+export interface NotificationDocument {
+  id: string;
+  companyId: string;
+  userId: string; // UID of the recipient, or 'all_managers', 'all_owners' etc. (logic to handle groups would be elsewhere)
+  type: NotificationType;
+  title: string;
+  message: string;
+  relatedResourceId?: string; // e.g., SKU, orderId, documentId
+  relatedResourceType?: 'inventory' | 'order' | 'document' | 'supplier' | 'forecast';
+  isRead: boolean;
+  createdAt: Timestamp;
+  linkTo?: string; // URL path for quick navigation
+}
+
+// --------------------
+// Activity Logs Collection
+// --------------------
+export type ActivityActionType = 
+  | 'item_created' | 'item_updated' | 'item_deleted'
+  | 'order_created' | 'order_status_updated'
+  | 'document_uploaded' | 'document_processed' | 'document_approved' | 'document_deleted'
+  | 'supplier_created' | 'supplier_updated' | 'supplier_score_recalculated'
+  | 'forecast_generated'
+  | 'user_login' | 'user_logout' // Example auth events
+  | 'settings_changed';
+
+export interface ActivityLogDocument {
+  id: string;
+  companyId: string;
+  userId: string; // UID of the user who performed the action
+  userEmail?: string; // Denormalized for easier display
+  actionType: ActivityActionType;
+  description: string; // e.g., "Updated quantity for SKU001 to 50 units"
+  resourceType?: 'inventory' | 'order' | 'document' | 'supplier' | 'forecast' | 'user' | 'company_settings';
+  resourceId?: string; // ID of the affected resource
+  details?: Record<string, any>; // e.g., { oldQuantity: 70, newQuantity: 50 }
+  ipAddress?: string; // Client IP address (if obtainable)
+  timestamp: Timestamp;
+}
+
+// --------------------
+// User Cache Collection (Optional, for caching user data like companyId/role)
+// --------------------
+export interface UserCacheDocument {
+    uid: string;
+    companyId: string;
+    role: UserRole;
+    displayName?: string;
+    email?: string;
+    lastRefreshed: Timestamp;
 }

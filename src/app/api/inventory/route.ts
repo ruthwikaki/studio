@@ -1,82 +1,76 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { db, AdminTimestamp } from '@/lib/firebase/admin';
-import { verifyAuthToken } from '@/lib/firebase/admin-auth';
+import { db, AdminTimestamp, FieldValue } from '@/lib/firebase/admin';
+import { withAuth, VerifiedUser, requireRole } from '@/lib/firebase/admin-auth';
 import type { InventoryStockDocument } from '@/lib/types/firestore';
+import { logActivity } from '@/lib/activityLog';
+import { CreateInventoryItemSchema } from '@/hooks/useInventory';
 
-export async function GET(request: NextRequest) {
+
+export const GET = withAuth(async (request: NextRequest, context: { params: any }, user: VerifiedUser) => {
+  // Allow 'viewer' and above to read inventory
+  if (!requireRole(user.role, 'viewer')) {
+    return NextResponse.json({ error: 'Access denied.' }, { status: 403 });
+  }
+  const { companyId } = user;
+
   try {
-    const { companyId } = await verifyAuthToken(request);
-    if (!companyId) {
-      return NextResponse.json({ error: 'Unauthorized or companyId missing.' }, { status: 401 });
-    }
-
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '10');
+    const limit = parseInt(searchParams.get('limit') || '8'); // Default to 8 for UI
     const category = searchParams.get('category');
     const lowStockOnly = searchParams.get('lowStockOnly') === 'true';
     const searchQuery = searchParams.get('search');
 
-    let query: admin.firestore.Query<admin.firestore.DocumentData> = db.collection('inventory').where('companyId', '==', companyId);
+    let query: FirebaseFirestore.Query<FirebaseFirestore.DocumentData> = db.collection('inventory').where('companyId', '==', companyId);
 
-    // Apply filters
-    if (category) {
+    if (category && category !== 'all') {
       query = query.where('category', '==', category);
     }
+     // Note: Firestore does not support case-insensitive search or OR queries on different fields directly.
+    // For robust search, a dedicated search service (Algolia, Elasticsearch) is recommended.
+    // This is a simplified prefix search for SKU or Name (requires client to handle which field or try both).
     if (searchQuery) {
-      // Firestore basic search: case-sensitive prefix match. For more complex search, use a dedicated service.
-      // This is a simplified approach. You might search by SKU or name.
-      // If searching by multiple fields, you'd need more complex logic or a search service.
-      // For this example, we'll search by SKU first, then try by name if no results (or combine queries).
-      // For simplicity, we'll just allow searching by SKU for now.
-      query = query.where('sku', '>=', searchQuery).where('sku', '<=', searchQuery + '\uf8ff');
-      // To search by name also, you might need to do:
-      // query = query.orderBy('name').startAt(searchQuery).endAt(searchQuery + '\uf8ff');
-      // but combining orderBy on different fields for search and pagination can be tricky.
+       query = query.orderBy('sku').startAt(searchQuery).endAt(searchQuery + '\uf8ff');
+       // If you also want to search by name and combine, it gets more complex and might need multiple queries + client-side merging
+       // or a denormalized searchable field.
+    } else {
+       query = query.orderBy('sku'); // Default sort
     }
     
-    // For lowStockOnly, Firestore cannot directly compare two fields (quantity <= reorderPoint).
-    // We will fetch based on other filters and then filter in memory for lowStockOnly.
-    // Alternatively, add a denormalized `isLowStock` boolean field to your InventoryStockDocument.
-
-    // Count total items for pagination before applying limit/offset for the main query
-    // Note: Firestore counts can be expensive on large datasets. Consider alternative patterns.
-    const countQuery = query; // Create a new reference for count
+    const countQuery = query;
     const totalItemsSnapshot = await countQuery.count().get();
-    const totalItems = totalItemsSnapshot.data().count;
-    const totalPages = Math.ceil(totalItems / limit);
+    let totalItems = totalItemsSnapshot.data().count;
 
-    // Apply pagination
-    query = query.orderBy('sku').limit(limit).offset((page - 1) * limit); // Ensure an orderBy for pagination
-
-    const snapshot = await query.get();
+    const paginatedQuery = query.limit(limit).offset((page - 1) * limit);
+    const snapshot = await paginatedQuery.get();
     let items: InventoryStockDocument[] = snapshot.docs.map(doc => {
       const data = doc.data();
       return {
         id: doc.id,
         ...data,
-        // Convert Timestamps to ISO strings for JSON serialization
-        lastUpdated: (data.lastUpdated as AdminTimestamp)?.toDate().toISOString(),
+        lastUpdated: (data.lastUpdated as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
+        createdAt: (data.createdAt as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
       } as InventoryStockDocument;
     });
 
-    // Server-side filter for lowStockOnly if requested
     if (lowStockOnly) {
-      items = items.filter(item => item.quantity <= item.reorderPoint);
-      // Note: The totalItems and totalPages might be slightly off if lowStockOnly is true
-      // as the count was done before this filter. For accurate pagination with server-side filtering,
-      // the filtering logic needs to be more complex or the count done after filtering (less efficient).
+      items = items.filter(item => item.quantity <= item.reorderPoint && item.reorderPoint > 0);
+      totalItems = items.length; // Recalculate totalItems for this specific filtered view
     }
-     if (searchQuery) { // If simple SKU search didn't cover name, add post-filter for name
+    // If search query was present and we need to filter by name additionally (if SKU search was primary)
+    if (searchQuery) {
         const lowerSearchQuery = searchQuery.toLowerCase();
         items = items.filter(item => 
             item.sku.toLowerCase().includes(lowerSearchQuery) ||
             (item.name && item.name.toLowerCase().includes(lowerSearchQuery))
         );
+         // totalItems might be less accurate if client expects combined search count.
     }
 
+
+    const totalPages = Math.ceil(totalItems / limit);
 
     return NextResponse.json({
       data: items,
@@ -85,57 +79,70 @@ export async function GET(request: NextRequest) {
 
   } catch (error: any) {
     console.error('Error fetching inventory:', error);
-    const message = error.message || 'Failed to fetch inventory items.';
-    if (error.code === 'MODULE_NOT_FOUND' || error.message.includes("Service account key not found")) {
-        return NextResponse.json({ error: 'Firebase Admin SDK not initialized. Service account key may be missing or incorrect.' }, { status: 500 });
+    if (error.code === 'failed-precondition') {
+      return NextResponse.json({ error: 'Query requires a Firestore index. Check server logs for details.', details: error.message }, { status: 400 });
     }
+    const message = error.message || 'Failed to fetch inventory items.';
     return NextResponse.json({ error: message }, { status: 500 });
   }
-}
+});
 
-// POST method for adding new inventory items - Placeholder for now
-export async function POST(request: NextRequest) {
+
+export const POST = withAuth(async (request: NextRequest, context: { params: any }, user: VerifiedUser) => {
+  // Require 'manager' role or higher to create inventory items
+  if (!requireRole(user.role, 'manager')) {
+    return NextResponse.json({ error: 'Access denied. Requires manager role or higher.' }, { status: 403 });
+  }
+  const { companyId, uid } = user;
+
   try {
-    const { uid, companyId } = await verifyAuthToken(request);
-    if (!companyId) {
-      return NextResponse.json({ error: 'Unauthorized or companyId missing.' }, { status: 401 });
-    }
-
     const body = await request.json();
-    // Add validation for body here using Zod or similar
+    const validationResult = CreateInventoryItemSchema.safeParse(body);
 
-    const { sku, name, quantity, unitCost, reorderPoint, category, ...rest } = body;
-
-    if (!sku || !name || quantity === undefined || unitCost === undefined || reorderPoint === undefined) {
-      return NextResponse.json({ error: 'Missing required fields (sku, name, quantity, unitCost, reorderPoint).' }, { status: 400 });
+    if (!validationResult.success) {
+        return NextResponse.json({ error: 'Invalid data.', details: validationResult.error.format() }, { status: 400 });
     }
+    const itemData = validationResult.data;
     
-    // Check if SKU already exists for this company
-    const existingItem = await db.collection('inventory').where('companyId', '==', companyId).where('sku', '==', sku).limit(1).get();
-    if (!existingItem.empty) {
-        return NextResponse.json({ error: `SKU ${sku} already exists for this company.`}, {status: 409});
+    const existingItemQuery = await db.collection('inventory')
+                                  .where('companyId', '==', companyId)
+                                  .where('sku', '==', itemData.sku)
+                                  .limit(1)
+                                  .get();
+    if (!existingItemQuery.empty) {
+        return NextResponse.json({ error: `SKU ${itemData.sku} already exists for this company.`}, {status: 409});
     }
 
-
-    const newItemRef = db.collection('inventory').doc(); // Auto-generate ID
-    const newItemData: Omit<InventoryStockDocument, 'id' | 'lastUpdated'> & { lastUpdated: admin.firestore.FieldValue, createdAt: admin.firestore.FieldValue } = {
+    const newItemRef = db.collection('inventory').doc();
+    const newItemData: Omit<InventoryStockDocument, 'id'> = {
+      ...itemData, // Spread validated data
       companyId,
-      productId: sku, // Assuming SKU is used as productId for now
-      sku,
-      name,
-      quantity: Number(quantity),
-      unitCost: Number(unitCost),
-      reorderPoint: Number(reorderPoint),
-      category: category || undefined,
-      imageUrl: body.imageUrl || undefined, // Make sure to handle image uploads separately if needed
+      productId: itemData.sku, // Assuming SKU is used as productId for now
       createdBy: uid,
-      lastUpdated: FieldValue.serverTimestamp(),
-      createdAt: FieldValue.serverTimestamp(), // Added createdAt
-      ...rest, // Include any other fields passed
+      lastUpdatedBy: uid,
+      lastUpdated: FieldValue.serverTimestamp() as FirebaseFirestore.Timestamp,
+      createdAt: FieldValue.serverTimestamp() as FirebaseFirestore.Timestamp,
+      lowStockAlertSent: false, // Default value
     };
 
     await newItemRef.set(newItemData);
-    const createdItem = { id: newItemRef.id, ...newItemData, lastUpdated: new Date().toISOString(), createdAt: new Date().toISOString() } as InventoryStockDocument;
+    
+    await logActivity({
+        user,
+        actionType: 'item_created',
+        resourceType: 'inventory',
+        resourceId: newItemRef.id,
+        description: `Created inventory item ${itemData.name} (SKU: ${itemData.sku}).`,
+        details: { sku: itemData.sku, name: itemData.name, quantity: itemData.quantity }
+    });
+    
+    const createdDocSnap = await newItemRef.get();
+    const createdItem = { 
+        id: createdDocSnap.id, 
+        ...createdDocSnap.data(),
+        lastUpdated: (createdDocSnap.data()?.lastUpdated as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
+        createdAt: (createdDocSnap.data()?.createdAt as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
+    } as InventoryStockDocument;
 
 
     return NextResponse.json({ data: createdItem, message: 'Inventory item added successfully.' }, { status: 201 });
@@ -143,10 +150,6 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('Error adding inventory item:', error);
     const message = error.message || 'Failed to add inventory item.';
-     if (error.code === 'MODULE_NOT_FOUND' || error.message.includes("Service account key not found")) {
-        return NextResponse.json({ error: 'Firebase Admin SDK not initialized. Service account key may be missing or incorrect.' }, { status: 500 });
-    }
     return NextResponse.json({ error: message }, { status: 500 });
   }
-}
-
+});

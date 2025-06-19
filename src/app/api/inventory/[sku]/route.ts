@@ -2,38 +2,23 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { db, FieldValue, AdminTimestamp } from '@/lib/firebase/admin';
-import { verifyAuthToken } from '@/lib/firebase/admin-auth';
+import { withAuth, VerifiedUser, requireRole } from '@/lib/firebase/admin-auth';
 import type { InventoryStockDocument } from '@/lib/types/firestore';
-import { z } from 'zod';
+import { UpdateInventoryItemSchema } from '@/hooks/useInventory';
+import { logActivity } from '@/lib/activityLog';
 
-// Zod schema for validating update payload
-const UpdateInventoryItemSchema = z.object({
-  name: z.string().optional(),
-  description: z.string().optional().nullable(),
-  quantity: z.number().int().min(0).optional(),
-  unitCost: z.number().min(0).optional(),
-  reorderPoint: z.number().int().min(0).optional(),
-  reorderQuantity: z.number().int().min(0).optional().nullable(),
-  category: z.string().optional().nullable(),
-  location: z.string().optional().nullable(),
-  imageUrl: z.string().url().optional().nullable(),
-  // Add other updatable fields here
-}).partial(); // .partial() makes all fields optional
+export const GET = withAuth(async (request: NextRequest, { params }: { params: { sku: string } }, user: VerifiedUser) => {
+  if (!requireRole(user.role, 'viewer')) {
+    return NextResponse.json({ error: 'Access denied.' }, { status: 403 });
+  }
+  const { companyId } = user;
+  const sku = params.sku;
 
-export async function GET(request: NextRequest, { params }: { params: { sku: string } }) {
+  if (!sku) {
+    return NextResponse.json({ error: 'SKU is required.' }, { status: 400 });
+  }
+
   try {
-    const { companyId } = await verifyAuthToken(request);
-    if (!companyId) {
-      return NextResponse.json({ error: 'Unauthorized or companyId missing.' }, { status: 401 });
-    }
-
-    const sku = params.sku;
-    if (!sku) {
-      return NextResponse.json({ error: 'SKU is required.' }, { status: 400 });
-    }
-
-    // In inventory collection, the document ID is the unique ID for the stock record.
-    // SKU is a field within the document. We need to query by companyId and SKU.
     const inventoryQuery = await db.collection('inventory')
                                   .where('companyId', '==', companyId)
                                   .where('sku', '==', sku)
@@ -49,8 +34,8 @@ export async function GET(request: NextRequest, { params }: { params: { sku: str
     const item: InventoryStockDocument = {
       id: doc.id,
       ...data,
-      lastUpdated: (data.lastUpdated as AdminTimestamp)?.toDate().toISOString(),
-      // Add other timestamp conversions if necessary
+      lastUpdated: (data.lastUpdated as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
+      createdAt: (data.createdAt as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
     } as InventoryStockDocument;
 
     return NextResponse.json({ data: item });
@@ -58,26 +43,23 @@ export async function GET(request: NextRequest, { params }: { params: { sku: str
   } catch (error: any) {
     console.error(`Error fetching inventory item ${params.sku}:`, error);
     const message = error.message || `Failed to fetch item ${params.sku}.`;
-    if (error.code === 'MODULE_NOT_FOUND' || error.message.includes("Service account key not found")) {
-        return NextResponse.json({ error: 'Firebase Admin SDK not initialized. Service account key may be missing or incorrect.' }, { status: 500 });
-    }
     return NextResponse.json({ error: message }, { status: 500 });
   }
-}
+});
 
 
-export async function PUT(request: NextRequest, { params }: { params: { sku: string } }) {
+export const PUT = withAuth(async (request: NextRequest, { params }: { params: { sku: string } }, user: VerifiedUser) => {
+  if (!requireRole(user.role, 'manager')) {
+    return NextResponse.json({ error: 'Access denied. Requires manager role or higher.' }, { status: 403 });
+  }
+  const { companyId, uid } = user;
+  const skuParam = params.sku;
+
+  if (!skuParam) {
+    return NextResponse.json({ error: 'SKU parameter is required.' }, { status: 400 });
+  }
+
   try {
-    const { companyId } = await verifyAuthToken(request);
-    if (!companyId) {
-      return NextResponse.json({ error: 'Unauthorized or companyId missing.' }, { status: 401 });
-    }
-
-    const skuParam = params.sku;
-    if (!skuParam) {
-      return NextResponse.json({ error: 'SKU parameter is required.' }, { status: 400 });
-    }
-
     const body = await request.json();
     const validationResult = UpdateInventoryItemSchema.safeParse(body);
 
@@ -85,13 +67,6 @@ export async function PUT(request: NextRequest, { params }: { params: { sku: str
       return NextResponse.json({ error: 'Invalid data.', details: validationResult.error.format() }, { status: 400 });
     }
     
-    // Prepare update data, ensuring FieldValue for server timestamp
-    const updatePayload = { 
-      ...validationResult.data, 
-      lastUpdated: FieldValue.serverTimestamp() 
-    };
-
-    // Find the document by companyId and SKU
     const inventoryQuery = await db.collection('inventory')
                                   .where('companyId', '==', companyId)
                                   .where('sku', '==', skuParam)
@@ -103,7 +78,24 @@ export async function PUT(request: NextRequest, { params }: { params: { sku: str
     }
     
     const itemDocRef = inventoryQuery.docs[0].ref;
+    const originalData = inventoryQuery.docs[0].data() as InventoryStockDocument;
+
+    const updatePayload = { 
+      ...validationResult.data, 
+      lastUpdated: FieldValue.serverTimestamp(),
+      lastUpdatedBy: uid,
+    };
+    
     await itemDocRef.update(updatePayload);
+    
+    await logActivity({
+        user,
+        actionType: 'item_updated',
+        resourceType: 'inventory',
+        resourceId: itemDocRef.id,
+        description: `Updated item ${originalData.name} (SKU: ${skuParam}).`,
+        details: { sku: skuParam, updatedFields: validationResult.data, originalName: originalData.name } // Example details
+    });
     
     const updatedDocSnap = await itemDocRef.get();
     const updatedData = updatedDocSnap.data();
@@ -111,7 +103,8 @@ export async function PUT(request: NextRequest, { params }: { params: { sku: str
     const updatedItem: InventoryStockDocument = {
       id: updatedDocSnap.id,
       ...updatedData,
-      lastUpdated: (updatedData?.lastUpdated as AdminTimestamp)?.toDate().toISOString(),
+      lastUpdated: (updatedData?.lastUpdated as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
+      createdAt: (updatedData?.createdAt as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
     } as InventoryStockDocument;
     
     return NextResponse.json({ data: updatedItem });
@@ -119,24 +112,22 @@ export async function PUT(request: NextRequest, { params }: { params: { sku: str
   } catch (error: any) {
     console.error(`Error updating inventory item ${params.sku}:`, error);
     const message = error.message || `Failed to update item ${params.sku}.`;
-     if (error.code === 'MODULE_NOT_FOUND' || error.message.includes("Service account key not found")) {
-        return NextResponse.json({ error: 'Firebase Admin SDK not initialized. Service account key may be missing or incorrect.' }, { status: 500 });
-    }
     return NextResponse.json({ error: message }, { status: 500 });
   }
-}
+});
 
-export async function DELETE(request: NextRequest, { params }: { params: { sku: string } }) {
+export const DELETE = withAuth(async (request: NextRequest, { params }: { params: { sku: string } }, user: VerifiedUser) => {
+  if (!requireRole(user.role, 'admin')) { // Example: Admins or owners can delete
+    return NextResponse.json({ error: 'Access denied. Requires admin role or higher.' }, { status: 403 });
+  }
+  const { companyId } = user;
+  const skuParam = params.sku;
+
+  if (!skuParam) {
+    return NextResponse.json({ error: 'SKU parameter is required for deletion.' }, { status: 400 });
+  }
+
   try {
-    const { companyId } = await verifyAuthToken(request);
-    if (!companyId) {
-      return NextResponse.json({ error: 'Unauthorized or companyId missing.' }, { status: 401 });
-    }
-    const skuParam = params.sku;
-    if (!skuParam) {
-      return NextResponse.json({ error: 'SKU parameter is required for deletion.' }, { status: 400 });
-    }
-
     const inventoryQuery = await db.collection('inventory')
                                   .where('companyId', '==', companyId)
                                   .where('sku', '==', skuParam)
@@ -148,16 +139,23 @@ export async function DELETE(request: NextRequest, { params }: { params: { sku: 
     }
 
     const itemDocRef = inventoryQuery.docs[0].ref;
+    const itemData = inventoryQuery.docs[0].data() as InventoryStockDocument;
     await itemDocRef.delete();
+
+    await logActivity({
+        user,
+        actionType: 'item_deleted',
+        resourceType: 'inventory',
+        resourceId: itemDocRef.id,
+        description: `Deleted item ${itemData.name} (SKU: ${skuParam}).`,
+        details: { sku: skuParam, name: itemData.name }
+    });
 
     return NextResponse.json({ message: `Item ${skuParam} deleted successfully.` }, { status: 200 });
 
   } catch (error: any) {
     console.error(`Error deleting inventory item ${params.sku}:`, error);
     const message = error.message || `Failed to delete item ${params.sku}.`;
-    if (error.code === 'MODULE_NOT_FOUND' || error.message.includes("Service account key not found")) {
-        return NextResponse.json({ error: 'Firebase Admin SDK not initialized. Service account key may be missing or incorrect.' }, { status: 500 });
-    }
     return NextResponse.json({ error: message }, { status: 500 });
   }
-}
+});
