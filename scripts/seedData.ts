@@ -11,7 +11,7 @@ import type {
 
 // --- Project ID Check (for logging purposes only, using the imported admin object) ---
 let sdkProjectId: string | undefined;
-if (admin.apps.length > 0 && admin.app().options.projectId) {
+if (admin.apps.length > 0 && admin.app().options && admin.app().options.projectId) {
     sdkProjectId = admin.app().options.projectId;
     console.log(`[Seed Script] Firebase Admin SDK appears to be initialized by admin.ts. Project ID from SDK: ${sdkProjectId}`);
     
@@ -22,6 +22,10 @@ if (admin.apps.length > 0 && admin.app().options.projectId) {
 } else {
   console.error("--------------------------------------------------------------------");
   console.error("[Seed Script] CRITICAL ERROR: Firebase Admin SDK does not seem to be initialized by admin.ts, or project ID is not readable from the SDK instance.");
+  console.error(`  Admin apps length: ${admin.apps.length}`);
+  if(admin.apps.length > 0) {
+    console.error(`  Default app options:`, admin.app().options);
+  }
   console.error("  This usually means that 'src/lib/firebase/admin.ts' failed to initialize.");
   console.error("  Please check the server startup logs for errors from 'admin.ts' related to 'service-account-key.json'.");
   console.error("  The 'service-account-key.json' file must be in the project root directory and be a valid key from your Firebase project.");
@@ -213,9 +217,9 @@ const mockOrders: MockOrderProcessed[] = mockOrdersRaw.map((o, index) => ({
 const mockSalesHistoryRaw: (Omit<SalesHistoryDocument, 'id' | 'companyId' | 'date' | 'productId' | 'deletedAt'> & {skuForLookup: string, orderId?: string, date: Date})[] = [
   { skuForLookup: "MOUSE002", orderId: mockOrders[1].id, date: mockOrders[1].orderDate, quantity: 2, unitPrice: 39.99, revenue: 79.98, costAtTimeOfSale: 15.50 * 2, channel: 'Online Store', customerId: 'cust_retail_001' },
   { skuForLookup: "KEYB003", orderId: mockOrders[1].id, date: mockOrders[1].orderDate, quantity: 1, unitPrice: 89.99, revenue: 89.99, costAtTimeOfSale: 42.00 * 1, channel: 'Online Store', customerId: 'cust_retail_001' },
-  { skuForLookup: "LAPTOP001", date: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000), quantity: 1, unitPrice: 1299.99, revenue: 1299.99, costAtTimeOfSale: 850.00 * 1, channel: 'Direct Sale' },
-  { skuForLookup: "TSHIRT001", date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), quantity: 10, unitPrice: 24.99, revenue: 249.90, costAtTimeOfSale: 8.00 * 10, channel: 'Retail POS' },
-  { skuForLookup: "TSHIRT001", date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), quantity: 5, unitPrice: 24.99, revenue: 124.95, costAtTimeOfSale: 8.00 * 5, channel: 'Online Store' },
+  { skuForLookup: "LAPTOP001", date: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000), quantity: 1, unitPrice: 1299.99, revenue: 1299.99, costAtTimeOfSale: 850.00 * 1, channel: 'Direct Sale' }, // No orderId
+  { skuForLookup: "TSHIRT001", date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), quantity: 10, unitPrice: 24.99, revenue: 249.90, costAtTimeOfSale: 8.00 * 10, channel: 'Retail POS' }, // No orderId
+  { skuForLookup: "TSHIRT001", date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), quantity: 5, unitPrice: 24.99, revenue: 124.95, costAtTimeOfSale: 8.00 * 5, channel: 'Online Store' }, // No orderId
 ];
 
 const mockSalesHistory: (Omit<SalesHistoryDocument, 'id' | 'date' | 'deletedAt'> & {id: string, date: Date})[] = mockSalesHistoryRaw.map((s, index) => ({
@@ -223,13 +227,13 @@ const mockSalesHistory: (Omit<SalesHistoryDocument, 'id' | 'date' | 'deletedAt'>
   companyId: MOCK_COMPANY_ID,
   productId: MOCK_PRODUCT_IDS[s.skuForLookup],
   sku: s.skuForLookup,
-  orderId: s.orderId || null, 
+  orderId: s.orderId || null, // Ensure null if undefined
   quantity: s.quantity,
   unitPrice: s.unitPrice,
   revenue: s.revenue,
   costAtTimeOfSale: s.costAtTimeOfSale,
   channel: s.channel,
-  customerId: s.customerId || null, 
+  customerId: s.customerId || null, // Ensure null if undefined
   date: s.date,
 }));
 
@@ -322,7 +326,7 @@ const mockChatSessions: (Omit<ChatSessionDocument, 'id' | 'createdAt' | 'lastMes
       messageTime += (msgIndex * 5000); // Stagger messages by 5 seconds
       return {
           ...rawMsg,
-          timestamp: AdminTimestamp.fromDate(new Date(messageTime))
+          timestamp: AdminTimestamp.fromDate(new Date(messageTime)) // Ensure correct Firestore Timestamp
       };
   });
 
@@ -332,7 +336,7 @@ const mockChatSessions: (Omit<ChatSessionDocument, 'id' | 'createdAt' | 'lastMes
     userId: chat.userId,
     title: chat.title,
     contextSnapshot: chat.contextSnapshot,
-    messages: processedMessages,
+    messages: processedMessages, // Use the processed messages with Firestore Timestamps
     createdAt: new Date(Date.now() - (index + 2) * 60 * 60 * 1000),
     lastMessageAt: new Date(Date.now() - (index + 1) * 59 * 60 * 1000),
   };
@@ -427,8 +431,8 @@ async function seedDatabase() {
     const salesHistoryData = {
       ...sh,
       date: AdminTimestamp.fromDate(sh.date),
-      orderId: sh.orderId, // Already handles null
-      customerId: sh.customerId, // Already handles null
+      orderId: sh.orderId, 
+      customerId: sh.customerId, 
       deletedAt: null
     };
     batch.set(shDocRef, salesHistoryData);
@@ -459,18 +463,13 @@ async function seedDatabase() {
   console.log(`Seeding ${mockChatSessions.length} chat sessions...`);
   mockChatSessions.forEach(chat => {
     const chatRef = db.collection('chat_sessions').doc(chat.id);
-    // Ensure timestamps are converted if they are JS Dates
-    const firestoreMessages = chat.messages.map(m => ({
-        ...m,
-        timestamp: m.timestamp instanceof Date ? AdminTimestamp.fromDate(m.timestamp) : m.timestamp
-    }));
-
+    // Timestamps in chat.messages are already Firestore Timestamps from the mapping above
     batch.set(chatRef, {
         companyId: chat.companyId,
         userId: chat.userId,
         title: chat.title,
         contextSnapshot: chat.contextSnapshot,
-        messages: firestoreMessages, // Use the processed messages
+        messages: chat.messages, // Use the messages which now have Firestore Timestamps
         createdAt: AdminTimestamp.fromDate(chat.createdAt),
         lastMessageAt: AdminTimestamp.fromDate(chat.lastMessageAt)
     });
@@ -494,7 +493,6 @@ async function seedDatabase() {
   } catch (error: any) {
     console.error("[Seed Script] Error committing batch:", error);
     console.error("--------------------------------------------------------------------");
-    // Use the sdkProjectId captured at the start of the script for consistent logging
     const currentProjectIdForErrorLog = sdkProjectId || 'UNKNOWN (SDK Project ID not readable during init check)';
     console.error(`  TROUBLESHOOTING: If you see 'NOT_FOUND' or permission errors for project '${currentProjectIdForErrorLog}':`);
     console.error(`  1. Ensure your Firebase project '${currentProjectIdForErrorLog}' has Firestore enabled.`);
@@ -512,7 +510,3 @@ seedDatabase().catch(error => {
   console.error("[Seed Script] Unhandled error during seeding:", error);
   process.exit(1);
 });
-
-    
-
-    
