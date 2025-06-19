@@ -427,8 +427,8 @@ async function seedDatabase() {
     const salesHistoryData = {
       ...sh,
       date: AdminTimestamp.fromDate(sh.date),
-      orderId: sh.orderId,
-      customerId: sh.customerId,
+      orderId: sh.orderId, // Already handles null
+      customerId: sh.customerId, // Already handles null
       deletedAt: null
     };
     batch.set(shDocRef, salesHistoryData);
@@ -459,6 +459,7 @@ async function seedDatabase() {
   console.log(`Seeding ${mockChatSessions.length} chat sessions...`);
   mockChatSessions.forEach(chat => {
     const chatRef = db.collection('chat_sessions').doc(chat.id);
+    // Ensure timestamps are converted if they are JS Dates
     const firestoreMessages = chat.messages.map(m => ({
         ...m,
         timestamp: m.timestamp instanceof Date ? AdminTimestamp.fromDate(m.timestamp) : m.timestamp
@@ -469,7 +470,7 @@ async function seedDatabase() {
         userId: chat.userId,
         title: chat.title,
         contextSnapshot: chat.contextSnapshot,
-        messages: firestoreMessages,
+        messages: firestoreMessages, // Use the processed messages
         createdAt: AdminTimestamp.fromDate(chat.createdAt),
         lastMessageAt: AdminTimestamp.fromDate(chat.lastMessageAt)
     });
@@ -511,5 +512,7 @@ seedDatabase().catch(error => {
   console.error("[Seed Script] Unhandled error during seeding:", error);
   process.exit(1);
 });
+
+    
 
     
