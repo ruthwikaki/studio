@@ -26,9 +26,13 @@ export async function generateDailyReport(): Promise<ActionResult<AnalyticsDocum
     let outOfStockItemsCount = 0;
     inventorySnapshot.docs.forEach(doc => {
       const item = doc.data() as InventoryStockDocument;
-      totalInventoryValue += (item.quantity || 0) * (item.unitCost || 0);
-      if (item.quantity <= item.reorderPoint && item.reorderPoint > 0) lowStockItemsCount++;
-      if (item.quantity <= 0) outOfStockItemsCount++;
+      const quantity = typeof item.quantity === 'number' ? item.quantity : 0;
+      const unitCost = typeof item.unitCost === 'number' ? item.unitCost : 0;
+      const reorderPoint = typeof item.reorderPoint === 'number' ? item.reorderPoint : 0;
+
+      totalInventoryValue += quantity * unitCost;
+      if (reorderPoint > 0 && quantity <= reorderPoint) lowStockItemsCount++;
+      if (quantity <= 0) outOfStockItemsCount++;
     });
 
     const today = new Date();
@@ -43,7 +47,8 @@ export async function generateDailyReport(): Promise<ActionResult<AnalyticsDocum
                                       .get();
     let todaysRevenue = 0;
     salesTodaySnapshot.docs.forEach(doc => {
-      todaysRevenue += (doc.data() as SalesHistoryDocument).revenue || 0;
+      const saleData = doc.data() as SalesHistoryDocument;
+      todaysRevenue += typeof saleData.revenue === 'number' ? saleData.revenue : 0;
     });
 
     const reportId = `daily_report_${companyId}_${today.toISOString().split('T')[0]}`;
@@ -55,7 +60,7 @@ export async function generateDailyReport(): Promise<ActionResult<AnalyticsDocum
       outOfStockItemsCount,
       todaysRevenue,
       // turnoverRate and other complex metrics can be calculated and added here
-      // For example, by calling calculateTurnoverRate
+      // For example, by calling calculateTurnoverRate if desired for daily report
       lastCalculated: FieldValue.serverTimestamp() as AdminTimestamp,
       generatedBy: uid,
     };
@@ -130,18 +135,19 @@ export async function calculateTurnoverRate(periodDays: number = 90): Promise<Ac
                                 .get();
     let cogs = 0;
     salesSnapshot.docs.forEach(doc => {
-      cogs += (doc.data() as SalesHistoryDocument).costAtTimeOfSale || 0;
+      const saleData = doc.data() as SalesHistoryDocument;
+      // Ensure costAtTimeOfSale is a number, default to 0 if not present or not a number
+      cogs += typeof saleData.costAtTimeOfSale === 'number' ? saleData.costAtTimeOfSale : 0;
     });
 
-    // 2. Calculate Average Inventory Value
-    // This is a simplified average using current inventory value.
-    // A more accurate method would use (BeginningInventory + EndingInventory) / 2,
-    // requiring historical inventory snapshots.
+    // 2. Calculate Current Inventory Value (Simplified Average)
     const inventorySnapshot = await db.collection('inventory').where('companyId', '==', companyId).get();
     let currentInventoryValue = 0;
     inventorySnapshot.docs.forEach(doc => {
       const item = doc.data() as InventoryStockDocument;
-      currentInventoryValue += (item.quantity || 0) * (item.unitCost || 0);
+      const quantity = typeof item.quantity === 'number' ? item.quantity : 0;
+      const unitCost = typeof item.unitCost === 'number' ? item.unitCost : 0;
+      currentInventoryValue += quantity * unitCost;
     });
     
     // Simplified: using current inventory value as average for this example.
@@ -149,7 +155,17 @@ export async function calculateTurnoverRate(periodDays: number = 90): Promise<Ac
     const avgInventoryValue = currentInventoryValue; 
 
     if (avgInventoryValue === 0) {
-      return { success: false, error: 'Average inventory value is zero, cannot calculate turnover rate.' };
+      // Avoid division by zero. If there's COGS but no inventory, turnover is effectively infinite (or an error).
+      // If COGS is also 0, turnover is 0.
+      return { 
+        success: true, 
+        data: { 
+          turnoverRate: 0, 
+          cogs, 
+          avgInventoryValue 
+        },
+        message: cogs > 0 ? `Average inventory value is zero with COGS > 0. Turnover rate is undefined or infinite.` : `Average inventory value and COGS are zero. Turnover rate is 0.`
+      };
     }
 
     const turnoverRate = cogs / avgInventoryValue;
@@ -164,8 +180,7 @@ export async function calculateTurnoverRate(periodDays: number = 90): Promise<Ac
       message: `Inventory turnover rate calculated for the last ${periodDays} days.`
     };
 
-  } catch (e: any)
- {
+  } catch (e: any) {
     console.error("Error calculating turnover rate:", e);
     return { success: false, error: e.message || 'Failed to calculate turnover rate.' };
   }
