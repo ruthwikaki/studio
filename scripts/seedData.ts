@@ -254,7 +254,7 @@ const mockSalesHistory: (Omit<SalesHistoryDocument, 'id' | 'date' | 'deletedAt'>
   revenue: s.revenue,
   costAtTimeOfSale: s.costAtTimeOfSale,
   channel: s.channel,
-  customerId: s.customerId,
+  customerId: s.customerId || null, // Ensure customerId is also null if undefined
   date: s.date,
 }));
 
@@ -495,4 +495,13 @@ async function seedDatabase() {
   try {
     await batch.commit();
     console.log("[Seed Script] Batch commit successful. Database seeded.");
-  } catch (error)
+  } catch (error: any) { // Added : any type for error
+    console.error("[Seed Script] Error committing batch:", error);
+    throw error; // Re-throw the error after logging to make it visible
+  }
+}
+
+seedDatabase().catch(error => {
+  console.error("[Seed Script] Unhandled error during seeding:", error);
+  process.exit(1);
+});
