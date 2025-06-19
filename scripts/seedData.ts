@@ -1,6 +1,6 @@
 
 // scripts/seedData.ts
-import { db, AdminTimestamp, FieldValue, admin } from '@/lib/firebase/admin'; // Import initialized admin components
+import { db, AdminTimestamp, FieldValue, admin } from '../src/lib/firebase/admin'; // Import initialized admin components
 import type { Timestamp as AdminTimestampType } from 'firebase-admin/firestore';
 import type {
   CompanyDocument, UserDocument, ProductDocument, InventoryStockDocument,
@@ -12,6 +12,8 @@ import type {
 // --- Project ID Check (for logging purposes only) ---
 let serviceAccountProjectId: string | undefined;
 try {
+  // This specific require is ONLY for logging the project_id from the key file directly
+  // The actual Firebase Admin SDK initialization happens in src/lib/firebase/admin.ts
   const serviceAccountForLogging = require("../../service-account-key.json"); // Path relative to script
   serviceAccountProjectId = serviceAccountForLogging.project_id;
   console.log(`[Seed Script] Successfully loaded service account key for logging. Detected project_id: ${serviceAccountProjectId}`);
@@ -38,6 +40,8 @@ if (!admin.apps.length) {
   console.error("  The 'service-account-key.json' file must be in the project root directory and be a valid key from your Firebase project.");
   console.error("--------------------------------------------------------------------");
   process.exit(1); // Exit if SDK is not initialized
+} else {
+  console.log(`[Seed Script] Firebase Admin SDK appears to be initialized by admin.ts. Project ID from SDK: ${admin.app().options.projectId || 'COULD NOT READ FROM SDK'}`);
 }
 // ------------------------------------------------------------------
 
@@ -234,13 +238,13 @@ const mockSalesHistory: (Omit<SalesHistoryDocument, 'id' | 'date' | 'deletedAt'>
   companyId: MOCK_COMPANY_ID,
   productId: MOCK_PRODUCT_IDS[s.skuForLookup],
   sku: s.skuForLookup,
-  orderId: s.orderId || null,
+  orderId: s.orderId || null, // Ensure undefined becomes null
   quantity: s.quantity,
   unitPrice: s.unitPrice,
   revenue: s.revenue,
   costAtTimeOfSale: s.costAtTimeOfSale,
   channel: s.channel,
-  customerId: s.customerId || null,
+  customerId: s.customerId || null, // Ensure undefined becomes null
   date: s.date,
 }));
 
@@ -438,8 +442,8 @@ async function seedDatabase() {
     const salesHistoryData = {
       ...sh,
       date: AdminTimestamp.fromDate(sh.date),
-      orderId: sh.orderId || null,
-      customerId: sh.customerId || null,
+      orderId: sh.orderId, // Already handled to be null if undefined
+      customerId: sh.customerId, // Already handled to be null if undefined
       deletedAt: null
     };
     batch.set(shDocRef, salesHistoryData);
@@ -470,12 +474,18 @@ async function seedDatabase() {
   console.log(`Seeding ${mockChatSessions.length} chat sessions...`);
   mockChatSessions.forEach(chat => {
     const chatRef = db.collection('chat_sessions').doc(chat.id);
+    // Ensure messages have Firestore Timestamps before setting
+     const firestoreMessages = chat.messages.map(m => ({
+        ...m,
+        timestamp: m.timestamp instanceof Date ? AdminTimestamp.fromDate(m.timestamp) : m.timestamp
+    }));
+
     batch.set(chatRef, {
         companyId: chat.companyId,
         userId: chat.userId,
         title: chat.title,
         contextSnapshot: chat.contextSnapshot,
-        messages: chat.messages, // These are already Firestore Timestamps
+        messages: firestoreMessages,
         createdAt: AdminTimestamp.fromDate(chat.createdAt),
         lastMessageAt: AdminTimestamp.fromDate(chat.lastMessageAt)
     });
@@ -499,8 +509,8 @@ async function seedDatabase() {
   } catch (error: any) {
     console.error("[Seed Script] Error committing batch:", error);
     console.error("--------------------------------------------------------------------");
-    console.error("  TROUBLESHOOTING: If you see 'NOT_FOUND' or permission errors:");
-    console.error(`  1. Ensure your Firebase project '${serviceAccountProjectId || admin.app().options.projectId || 'UNKNOWN'}' has Firestore enabled.`);
+    console.error(`  TROUBLESHOOTING: If you see 'NOT_FOUND' or permission errors for project '${admin.app().options.projectId || 'UNKNOWN'}':`);
+    console.error(`  1. Ensure your Firebase project '${admin.app().options.projectId || 'UNKNOWN'}' has Firestore enabled.`);
     console.error("     Go to Firebase Console -> Firestore Database -> Create database (if not already done).");
     console.error("  2. Select a region for your Firestore database (this is a one-time setup).");
     console.error("  3. Ensure the service account key being used has appropriate permissions (e.g., 'Owner' or 'Firebase Admin' or 'Cloud Datastore User').");
@@ -515,5 +525,3 @@ seedDatabase().catch(error => {
   console.error("[Seed Script] Unhandled error during seeding:", error);
   process.exit(1);
 });
-
-    
