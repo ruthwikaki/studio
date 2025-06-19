@@ -16,17 +16,24 @@ try {
   // IMPORTANT: Ensure the path to your Firebase service account key is correct.
   // This file should be in the root of your project if using the path below.
   // DO NOT COMMIT YOUR ACTUAL SERVICE ACCOUNT KEY TO PUBLIC REPOSITORIES.
-  serviceAccount = require("../service-account-key.json");
+  serviceAccount = require("../service-account-key.json"); // Path relative to script location in `scripts` dir
   console.log(`[Seed Script] Successfully loaded service account key. Detected project_id: ${serviceAccount.project_id}`);
 
   if (!serviceAccount.project_id) {
     throw new Error("Service account key is missing 'project_id'. Please ensure it's a valid key from Firebase.");
   }
 
+  const expectedProjectId = "aria-jknbu"; // Define your expected project ID
+  if (serviceAccount.project_id !== expectedProjectId) {
+      console.warn(`[Seed Script] WARNING: Loaded service account key is for project '${serviceAccount.project_id}', but expected '${expectedProjectId}'. Make sure this is intentional.`);
+  }
+
+
   if (!admin.apps.length) {
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
-      databaseURL: `https://${serviceAccount.project_id}.firebaseio.com`
+      // Firestore Admin SDK typically does not need databaseURL to be set explicitly
+      // databaseURL: `https://${serviceAccount.project_id}.firebaseio.com` // This is for Realtime Database
     });
     console.log(`[Seed Script] Firebase Admin SDK initialized for project: ${serviceAccount.project_id}`);
   } else {
@@ -35,13 +42,17 @@ try {
 } catch (error: any) {
   console.error("--------------------------------------------------------------------");
   console.error("[Seed Script] CRITICAL ERROR INITIALIZING FIREBASE ADMIN SDK:");
-  if (error.code === 'MODULE_NOT_FOUND' && error.message.includes('../service-account-key.json')) {
-    console.error("  Reason: The 'service-account-key.json' file was not found in the project root.");
-    console.error("  ACTION: Please download your service account key from your Firebase project settings and place it in the root directory, naming it 'service-account-key.json'.");
+  if (error.code === 'MODULE_NOT_FOUND' && error.message.includes('../service-account-key.json')) { // Adjusted path for error message
+    console.error("  Reason: The 'service-account-key.json' file was not found. Expected at project root, path relative to script: ../service-account-key.json");
+    console.error("  ACTION: Please download your service account key from your Firebase project settings and place it in the project root, naming it 'service-account-key.json'.");
   } else if (error.message.includes("Service account key is missing 'project_id'")) {
     console.error("  Reason: The 'service-account-key.json' file seems to be invalid or incomplete (missing 'project_id').");
     console.error("  ACTION: Please re-download your service account key from Firebase and ensure it's correctly placed.");
-  } else {
+  } else if (error.message.includes("Failed to parse service account KeyFile")) {
+    console.error("  Reason: The 'service-account-key.json' file is not valid JSON.");
+    console.error("  ACTION: Please re-download your service account key from Firebase and ensure it's correctly placed and not corrupted.");
+  }
+  else {
     console.error("  Reason:", error.message);
     console.error("  Details:", error);
     console.error("  ACTION: Verify your 'service-account-key.json' is correct and accessible. Ensure it's not the placeholder file.");
@@ -248,13 +259,13 @@ const mockSalesHistory: (Omit<SalesHistoryDocument, 'id' | 'date' | 'deletedAt'>
   companyId: MOCK_COMPANY_ID,
   productId: MOCK_PRODUCT_IDS[s.skuForLookup],
   sku: s.skuForLookup,
-  orderId: s.orderId || null, // Convert undefined to null
+  orderId: s.orderId || null,
   quantity: s.quantity,
   unitPrice: s.unitPrice,
   revenue: s.revenue,
   costAtTimeOfSale: s.costAtTimeOfSale,
   channel: s.channel,
-  customerId: s.customerId || null, // Ensure customerId is also null if undefined
+  customerId: s.customerId || null,
   date: s.date,
 }));
 
@@ -345,7 +356,7 @@ const mockChatSessions: (Omit<ChatSessionDocument, 'id' | 'createdAt' | 'lastMes
     id: `chat_seed_${String(index + 1).padStart(3, '0')}`,
     companyId: MOCK_COMPANY_ID,
     ...chat,
-    messages: chat.messages.map(msg => ({...msg, timestamp: AdminTimestamp.fromDate(new Date(Date.now() - (Math.random() * 3600 * 1000))) } as ChatMessage)),
+    messages: chat.messages.map(msg => ({...msg, timestamp: msg.timestamp instanceof Date ? AdminTimestamp.fromDate(msg.timestamp) : m.timestamp })),
     createdAt: new Date(Date.now() - (index + 2) * 60 * 60 * 1000),
     lastMessageAt: new Date(Date.now() - (index + 1) * 59 * 60 * 1000),
 }));
@@ -440,7 +451,7 @@ async function seedDatabase() {
     const salesHistoryData = {
       ...sh,
       date: AdminTimestamp.fromDate(sh.date),
-      orderId: sh.orderId || null, // Handles if orderId was already null from mapping
+      orderId: sh.orderId || null,
       customerId: sh.customerId || null,
       deletedAt: null
     };
@@ -481,7 +492,7 @@ async function seedDatabase() {
   });
 
   console.log(`Seeding daily aggregate for ${MOCK_COMPANY_ID}...`);
-  const todayForAggregate = new Date(); // Use UTC date for consistency
+  const todayForAggregate = new Date();
   todayForAggregate.setUTCHours(0,0,0,0);
   const aggregateDocId = `${MOCK_COMPANY_ID}_${todayForAggregate.toISOString().split('T')[0]}`;
   const aggregateDocRef = db.collection('daily_aggregates').doc(aggregateDocId);
@@ -495,9 +506,18 @@ async function seedDatabase() {
   try {
     await batch.commit();
     console.log("[Seed Script] Batch commit successful. Database seeded.");
-  } catch (error: any) { // Added : any type for error
+  } catch (error: any) {
     console.error("[Seed Script] Error committing batch:", error);
-    throw error; // Re-throw the error after logging to make it visible
+    console.error("--------------------------------------------------------------------");
+    console.error("  TROUBLESHOOTING: If you see 'NOT_FOUND' or permission errors:");
+    console.error(`  1. Ensure your Firebase project '${serviceAccount?.project_id || 'UNKNOWN'}' has Firestore enabled.`);
+    console.error("     Go to Firebase Console -> Firestore Database -> Create database (if not already done).");
+    console.error("  2. Select a region for your Firestore database (this is a one-time setup).");
+    console.error("  3. Ensure the service account key being used has appropriate permissions (e.g., 'Owner' or 'Firebase Admin' or 'Cloud Datastore User').");
+    console.error("  Details from error:", error.details);
+    console.error("  Code:", error.code);
+    console.error("--------------------------------------------------------------------");
+    throw error;
   }
 }
 
@@ -505,3 +525,5 @@ seedDatabase().catch(error => {
   console.error("[Seed Script] Unhandled error during seeding:", error);
   process.exit(1);
 });
+
+    
