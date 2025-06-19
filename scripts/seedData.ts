@@ -248,7 +248,7 @@ const mockSalesHistory: (Omit<SalesHistoryDocument, 'id' | 'date' | 'deletedAt'>
   companyId: MOCK_COMPANY_ID,
   productId: MOCK_PRODUCT_IDS[s.skuForLookup],
   sku: s.skuForLookup,
-  orderId: s.orderId,
+  orderId: s.orderId || null, // Convert undefined to null
   quantity: s.quantity,
   unitPrice: s.unitPrice,
   revenue: s.revenue,
@@ -436,7 +436,15 @@ async function seedDatabase() {
   console.log(`Seeding ${mockSalesHistory.length} sales history records...`);
   mockSalesHistory.forEach(sh => {
     const shDocRef = db.collection('sales_history').doc(sh.id);
-    batch.set(shDocRef, { ...sh, date: AdminTimestamp.fromDate(sh.date), deletedAt: null });
+    // Ensure all fields are defined or null
+    const salesHistoryData = {
+      ...sh,
+      date: AdminTimestamp.fromDate(sh.date),
+      orderId: sh.orderId || null, // Handles if orderId was already null from mapping
+      customerId: sh.customerId || null,
+      deletedAt: null
+    };
+    batch.set(shDocRef, salesHistoryData);
   });
 
   console.log(`Seeding ${mockForecasts.length} forecasts...`);
@@ -487,28 +495,4 @@ async function seedDatabase() {
   try {
     await batch.commit();
     console.log("[Seed Script] Batch commit successful. Database seeded.");
-  } catch (error) {
-    console.error("[Seed Script] Error committing batch: ", error);
-  }
-
-  console.log("\n--- Mock Data Summary (Written to DB) ---");
-  console.log("Company:", JSON.stringify(mockCompany, null, 2));
-  console.log("Users (first 1):", JSON.stringify(mockUsers.slice(0,1), null, 2) + "\n  ...");
-  console.log("Products (first 2):", JSON.stringify(mockProducts.slice(0,2), null, 2) + "\n  ...");
-  console.log("Inventory Stock (first 2):", JSON.stringify(mockInventoryStock.slice(0,2), null, 2) + "\n  ...");
-  console.log("Orders (first 1):", JSON.stringify(mockOrders.slice(0,1), (key, value) => {
-    if (value instanceof Date) {
-      return value.toISOString();
-    }
-    return value;
-  }, 2) + "\n  ...");
-  console.log("Daily Aggregate (for today):", JSON.stringify(mockDailyAggregate, (key, value) => {
-    if (value instanceof Date) return value.toISOString();
-    return value;
-  }, 2));
-
-
-  console.log("\n[Seed Script] Seeding complete. Data should be in your Firestore database.");
-}
-
-seedDatabase().catch(console.error);
+  } catch (error)
