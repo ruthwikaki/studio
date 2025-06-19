@@ -381,7 +381,8 @@ async function seedDatabase() {
   try {
     // Diagnostic: Attempt a single simple write
     console.log(`[Seed Script] Attempting a diagnostic write to project ${sdkProjectId}...`);
-    const diagnosticDocRef = db.collection('_seed_diagnostics').doc(`test_write_${Date.now()}`);
+    // Using .set() on a specific document path for more direct diagnostic
+    const diagnosticDocRef = db.collection('_seed_diagnostics').doc(`test_write_project_${sdkProjectId}_${Date.now()}`);
     await diagnosticDocRef.set({ 
         timestamp: FieldValue.serverTimestamp(), 
         message: `Seed script diagnostic write for project ${sdkProjectId}`,
@@ -395,7 +396,7 @@ async function seedDatabase() {
     console.error("  1. Cloud Firestore API is enabled in Google Cloud Console for project:", sdkProjectId);
     console.error("  2. The service account has 'Cloud Datastore User' or 'Editor' role in IAM for project:", sdkProjectId);
     console.error("  3. The project has an active billing account linked.");
-    console.error("  Details from diagnostic error:", diagError.details);
+    console.error("  Details from diagnostic error:", diagError.message);
     console.error("  Code:", diagError.code);
     process.exit(1);
   }
@@ -530,7 +531,7 @@ async function seedDatabase() {
     console.error("     Go to Firebase Console -> Firestore Database -> Create database (if not already done).");
     console.error("  2. Select a region for your Firestore database (this is a one-time setup).");
     console.error("  3. Ensure the service account key being used ('service-account-key.json' in project root) has appropriate permissions (e.g., 'Owner' or 'Firebase Admin' or 'Cloud Datastore User') for the project it belongs to.");
-    console.error("  Details from error:", error.details);
+    console.error("  Details from error:", error.message);
     console.error("  Code:", error.code);
     console.error("--------------------------------------------------------------------");
     throw error;
