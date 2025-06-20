@@ -21,24 +21,24 @@ interface DashboardKPIs {
 
 export async function GET(request: NextRequest) {
   console.log("[Analytics Dashboard API] Request received at entry point.");
-  let companyId: string;
-  let userId: string;
-
+  
   if (!isAdminInitialized()) {
     const initErrorMsg = getInitializationError(); // Get the specific error
-    console.error(`[Analytics Dashboard API] Firebase Admin SDK not initialized at entry. Detailed Error: ${initErrorMsg || 'Unknown initialization error. Check server startup logs from admin.ts.'}`);
-    // Return the specific error message to the client
-    return NextResponse.json({ error: `Server configuration error: Firebase Admin SDK not initialized. Reason: ${initErrorMsg || 'Please check server startup logs for details, likely related to service-account-key.json.'}` }, { status: 500 });
+    const detailedErrorMessage = `Firebase Admin SDK not initialized. Reason: ${initErrorMsg || 'Unknown initialization error. Please check server startup logs from admin.ts, especially for messages about service-account-key.json.'}`;
+    console.error(`[Analytics Dashboard API] AT ENTRY: ${detailedErrorMessage}`);
+    return NextResponse.json({ error: `Server configuration error: ${detailedErrorMessage}` }, { status: 500 });
   }
 
   const db = getDb();
   if (!db) {
-    const initErrorMsg = getInitializationError(); // Get the specific error
-    console.error(`[Analytics Dashboard API] Firestore instance (db) is null. Detailed Error: ${initErrorMsg || 'Unknown initialization error causing db to be null.'}`);
-    // Return the specific error message to the client
-    return NextResponse.json({ error: `Server configuration error: Firestore instance is not available. Reason: ${initErrorMsg || 'Please check server startup logs.'}` }, { status: 500 });
+    const initErrorMsg = getInitializationError(); 
+    const detailedErrorMessage = `Firestore instance (db) is null. Reason: ${initErrorMsg || 'This usually means Admin SDK initialization failed critically earlier. Check server startup logs.'}`;
+    console.error(`[Analytics Dashboard API] AFTER SDK INIT CHECK: ${detailedErrorMessage}`);
+    return NextResponse.json({ error: `Server configuration error: ${detailedErrorMessage}` }, { status: 500 });
   }
-
+  
+  let companyId: string;
+  let userId: string;
   try {
     const authResult = await verifyAuthToken(request); 
     companyId = authResult.companyId;
@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
 
     if (aggregateDocSnap.exists) {
       const aggData = aggregateDocSnap.data() as DailyAggregateDocument;
-      console.log(`[Analytics Dashboard API] Aggregate document ${aggregateDocId} FOUND. Data (first 500 chars):`, JSON.stringify(aggData).substring(0, 500) + "...");
+      console.log(`[Analytics Dashboard API] Aggregate document ${aggregateDocId} FOUND.`);
 
       const kpis: DashboardKPIs = {
         totalInventoryValue: typeof aggData.totalInventoryValue === 'number' ? aggData.totalInventoryValue : 0,
@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
                                           .count()
                                           .get();
       kpis.pendingOrdersCount = pendingOrdersSnapshot.data().count;
-      console.log(`[Analytics Dashboard API] KPIs from AGGREGATE (Pending Orders: ${kpis.pendingOrdersCount}):`, JSON.stringify(kpis));
+      console.log(`[Analytics Dashboard API] KPIs from AGGREGATE (Pending Orders: ${kpis.pendingOrdersCount}):`, JSON.stringify(kpis).substring(0, 300) + "...");
       return NextResponse.json({ data: kpis, source: 'aggregate' });
 
     } else {
@@ -161,7 +161,7 @@ export async function GET(request: NextRequest) {
         inventoryValueByCategory,
         lastUpdated: new Date().toISOString(),
       };
-      console.log(`[Analytics Dashboard API] KPIs from LIVE CALCULATION:`, JSON.stringify(kpis));
+      console.log(`[Analytics Dashboard API] KPIs from LIVE CALCULATION:`, JSON.stringify(kpis).substring(0,300) + "...");
       return NextResponse.json({ data: kpis, source: 'live_calculation' });
     }
   } catch (error: any) {
@@ -169,7 +169,6 @@ export async function GET(request: NextRequest) {
     const errorMessage = `Internal server error during dashboard analytics: ${error.message || 'Unknown error'}`;
     if (error.code === 'failed-precondition' || (error.message && (error.message.includes("requires an index") || error.message.includes("Query requires an index")))) {
         console.error("[Analytics Dashboard API] Firestore missing index detected. Error message:", error.message);
-        // The error message from Firestore usually contains the link to create the index.
         return NextResponse.json({
             error: 'A Firestore query failed due to a missing index. Please check server logs for a link to create the required index. This is a common issue that needs to be resolved in the Firebase console.',
             details: error.message
@@ -178,5 +177,3 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: errorMessage, details: error.stack ? error.stack.substring(0, 500) + "..." : "No stack trace available" }, { status: 500 });
   }
 }
-
-    
