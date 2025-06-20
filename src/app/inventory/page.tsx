@@ -16,11 +16,12 @@ import { useInventory, useUpdateInventoryItem } from '@/hooks/useInventory';
 import { Skeleton } from '@/components/ui/skeleton';
 import Image from 'next/image';
 import { Progress } from '@/components/ui/progress';
-import { ProductFormModal } from '@/components/inventory/ProductFormModal'; // Import the modal
+import { ProductFormModal } from '@/components/inventory/ProductFormModal'; 
 
-const calculateStockValue = (item: InventoryStockDocument) => item.quantity * item.unitCost;
+const calculateStockValue = (item: Partial<InventoryStockDocument>) => (item.quantity || 0) * (item.unitCost || 0);
 
-const getStatus = (item: InventoryStockDocument): 'In Stock' | 'Low Stock' | 'Out of Stock' | 'Overstocked' => {
+const getStatus = (item: Partial<InventoryStockDocument>): 'In Stock' | 'Low Stock' | 'Out of Stock' | 'Overstocked' => {
+  if (item.quantity === undefined || item.reorderPoint === undefined) return 'Out of Stock'; // Or some other default
   if (item.quantity > (item.reorderPoint || 0) * 2.5 && (item.reorderPoint || 0) > 0) return 'Overstocked';
   if (item.quantity <= 0) return 'Out of Stock';
   if (item.quantity <= (item.reorderPoint || 0)) return 'Low Stock';
@@ -62,7 +63,8 @@ export default function InventoryPage() {
   const inventoryFilters = useMemo(() => ({
     searchTerm: debouncedSearchTerm,
     category: filterCategory,
-  }), [debouncedSearchTerm, filterCategory]);
+    lowStockOnly: filterStockHealth === 'critical', // Example how to map health to API param
+  }), [debouncedSearchTerm, filterCategory, filterStockHealth]);
 
   const {
     data,
@@ -84,7 +86,8 @@ export default function InventoryPage() {
 
   const allItems = useMemo(() => {
     let items = data?.pages.flatMap(page => page.data) ?? [];
-    if (filterStockHealth !== 'all') {
+    // Client-side filtering for stock health if not fully handled by API or needs refinement
+    if (filterStockHealth !== 'all' && !inventoryFilters.lowStockOnly) { // Avoid double-filtering if lowStockOnly API param is used
       items = items.filter(item => {
         const status = getStatus(item);
         if (filterStockHealth === 'critical' && (status === 'Out of Stock' || status === 'Low Stock')) return true;
@@ -94,7 +97,7 @@ export default function InventoryPage() {
       });
     }
     return items;
-  }, [data, filterStockHealth]);
+  }, [data, filterStockHealth, inventoryFilters.lowStockOnly]);
   
   const categories = useMemo(() => {
     const uniqueCategories = new Set(data?.pages.flatMap(page => page.data).map(item => item.category).filter(Boolean) as string[]);
@@ -212,7 +215,7 @@ export default function InventoryPage() {
                 </CardContent>
             </Card>
 
-            {isLoading && !data?.pages.length ? (
+            {isLoading && (!data || data.pages.length === 0 || data.pages[0].data.length === 0) ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
                     {Array.from({ length: 6 }).map((_, i) => (
                         <Card key={`skeleton-card-${i}`} className="shadow-md">
@@ -235,6 +238,10 @@ export default function InventoryPage() {
             ) : allItems.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
                     {allItems.map((item) => {
+                        if(!item.id || !item.name || item.sku === undefined || item.quantity === undefined || item.unitCost === undefined) {
+                            console.warn("Skipping rendering item due to missing essential fields:", item);
+                            return null; // Skip rendering this item
+                        }
                         const status = getStatus(item);
                         const stockPercentage = (item.reorderPoint || 0) > 0 ? Math.min((item.quantity / ((item.reorderPoint || 0) * 1.5)) * 100, 100) : item.quantity > 0 ? 100 : 0;
                         return (
@@ -269,7 +276,7 @@ export default function InventoryPage() {
                                     </p>
                                 </CardContent>
                                 <CardFooter className="p-4 border-t mt-auto">
-                                    <Button size="sm" className="w-full bg-primary hover:bg-primary/90" onClick={() => handleOpenModal(item)}>
+                                    <Button size="sm" className="w-full bg-primary hover:bg-primary/90" onClick={() => handleOpenModal(item as InventoryStockDocument)}>
                                         <Edit3 className="mr-2 h-4 w-4" /> Edit
                                     </Button>
                                     <DropdownMenu>

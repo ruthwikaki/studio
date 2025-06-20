@@ -5,9 +5,9 @@ import { authAdmin, db, AdminTimestamp } from './admin';
 import type { UserDocument, UserRole, UserCacheDocument } from '@/lib/types/firestore';
 import { NextResponse } from 'next/server';
 
-const MOCK_USER_ID = 'user_owner_seed_001';
-const MOCK_COMPANY_ID = 'comp_supplychainai_seed_001';
-const MOCK_EMAIL = 'owner@seedsupply.example.com';
+const MOCK_USER_ID = 'user_owner_seed_001'; // Corresponds to seed script
+const MOCK_COMPANY_ID = 'comp_seed_co_001'; // Corrected to match seed script
+const MOCK_EMAIL = 'owner@seedsupply.example.com'; // Corresponds to seed script
 const MOCK_ROLE: UserRole = 'owner';
 
 // In-memory cache for user data to reduce Firestore lookups
@@ -76,6 +76,7 @@ export async function verifyAuthToken(request: NextRequest): Promise<VerifiedUse
     if (process.env.NODE_ENV === 'development') {
         const mockUser = await getVerifiedUser(MOCK_USER_ID); // Try to get mock user from DB for consistency
         if (mockUser) return mockUser;
+        // Fallback if even mock user not in DB yet (e.g. before first seed)
         return { uid: MOCK_USER_ID, companyId: MOCK_COMPANY_ID, role: MOCK_ROLE, email: MOCK_EMAIL };
     }
     throw new Error('No authorization token provided.');

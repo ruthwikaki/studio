@@ -10,8 +10,8 @@ export const SUPPLIERS_QUERY_KEY = 'suppliers';
 
 // --- Schemas for API validation (can be moved to a shared location) ---
 export const CreateSupplierSchema = z.object({
-  name: z.string().min(1, "Supplier name is required"),
-  email: z.string().email().optional().or(z.literal('')),
+  name: z.string().min(1, "Supplier name is required").trim(),
+  email: z.string().email("Invalid email format").optional().or(z.literal('')),
   phone: z.string().optional(),
   address: z.object({
     street: z.string().optional(),
@@ -22,13 +22,13 @@ export const CreateSupplierSchema = z.object({
   }).optional(),
   contactPerson: z.object({
     name: z.string().optional(),
-    email: z.string().email().optional().or(z.literal('')),
+    email: z.string().email("Invalid contact email format").optional().or(z.literal('')),
     phone: z.string().optional(),
   }).optional(),
-  leadTimeDays: z.number().int().min(0).optional(),
-  reliabilityScore: z.number().min(0).max(100).optional(),
+  leadTimeDays: z.coerce.number().int().min(0).optional().nullable(),
+  reliabilityScore: z.coerce.number().min(0).max(100).optional().nullable(),
   paymentTerms: z.string().optional(),
-  moq: z.number().min(0).optional(),
+  moq: z.coerce.number().min(0).optional().nullable(),
   productsSuppliedSkus: z.array(z.string()).optional().describe("Array of SKUs supplied by this vendor"),
   notes: z.string().optional(),
 });
@@ -41,24 +41,33 @@ export type UpdateSupplierInput = z.infer<typeof UpdateSupplierSchema>;
 interface PaginatedSuppliersResponse {
   data: SupplierDocument[];
   pagination: {
-    currentPage: number;
-    pageSize: number;
-    totalItems: number;
-    totalPages: number;
+    count: number;
+    nextCursor: string | null;
   };
 }
 
+interface FetchSuppliersParams {
+  pageParam?: string; // startAfterDocId
+  limit?: number;
+  searchTerm?: string;
+  reliability?: string;
+  leadTime?: string;
+}
+
 // --- API Fetching Functions ---
-const fetchSuppliers = async ({ pageParam = 1, queryKey }: any): Promise<PaginatedSuppliersResponse> => {
-  const [_key, { filters }] = queryKey;
-  const { searchTerm, reliability, leadTime } = filters || {};
-  
+const fetchSuppliers = async ({
+  pageParam,
+  limit = 10,
+  searchTerm,
+  reliability,
+  leadTime,
+}: FetchSuppliersParams): Promise<PaginatedSuppliersResponse> => {
   const params = new URLSearchParams();
-  params.append('page', pageParam.toString());
-  params.append('limit', '10');
+  params.append('limit', String(limit));
+  if (pageParam) params.append('startAfter', pageParam);
   if (searchTerm) params.append('search', searchTerm);
-  if (reliability) params.append('reliability', reliability);
-  if (leadTime) params.append('leadTime', leadTime);
+  if (reliability && reliability !== 'all') params.append('reliability', reliability);
+  if (leadTime && leadTime !== 'all') params.append('leadTime', leadTime);
 
   const response = await fetch(`/api/suppliers?${params.toString()}`);
   if (!response.ok) {
@@ -108,16 +117,17 @@ const updateSupplier = async ({ id, data }: { id: string; data: UpdateSupplierIn
 
 // --- React Query Hooks ---
 export function useSuppliers(filters?: { searchTerm?: string; reliability?: string; leadTime?: string }) {
-  return useInfiniteQuery<PaginatedSuppliersResponse, Error>({
+  return useInfiniteQuery<
+    PaginatedSuppliersResponse,
+    Error,
+    PaginatedSuppliersResponse,
+    any, // queryKey type
+    string | undefined // pageParam type
+  >({
     queryKey: [SUPPLIERS_QUERY_KEY, { filters }],
-    queryFn: fetchSuppliers,
-    getNextPageParam: (lastPage) => {
-      if (lastPage.pagination.currentPage < lastPage.pagination.totalPages) {
-        return lastPage.pagination.currentPage + 1;
-      }
-      return undefined;
-    },
-    initialPageParam: 1,
+    queryFn: ({ pageParam }) => fetchSuppliers({ ...filters, pageParam }),
+    getNextPageParam: (lastPage) => lastPage.pagination.nextCursor,
+    initialPageParam: undefined,
   });
 }
 
@@ -125,7 +135,7 @@ export function useSupplier(id: string | null) {
   return useQuery<SupplierDocument, Error>({
     queryKey: [SUPPLIERS_QUERY_KEY, id],
     queryFn: () => fetchSupplierById(id!),
-    enabled: !!id, // Only run query if id is not null
+    enabled: !!id, 
   });
 }
 
@@ -161,9 +171,3 @@ export function useUpdateSupplier() {
     },
   });
 }
-
-// Placeholder for delete supplier mutation
-// export function useDeleteSupplier() { ... }
-
-// Placeholder for compare suppliers hook
-// export function useCompareSuppliers(supplierIds: string[]) { ... }

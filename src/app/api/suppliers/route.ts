@@ -16,42 +16,45 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const limit = parseInt(searchParams.get('limit') || '10');
-  const startAfterDocId = searchParams.get('startAfter'); // For cursor-based pagination
+  const startAfterDocId = searchParams.get('startAfter'); 
   const searchTerm = searchParams.get('search');
-  const reliabilityFilter = searchParams.get('reliability'); // e.g. "85-100"
-  const leadTimeFilter = searchParams.get('leadTime'); // e.g. "0-7"
+  const reliabilityFilter = searchParams.get('reliability'); 
+  const leadTimeFilter = searchParams.get('leadTime'); 
 
   try {
-    let query: FirebaseFirestore.Query<FirebaseFirestore.DocumentData> = db.collection('suppliers').where('companyId', '==', companyId);
+    let query: FirebaseFirestore.Query<FirebaseFirestore.DocumentData> = db.collection('suppliers')
+                                                                        .where('companyId', '==', companyId)
+                                                                        .where('deletedAt', '==', null);
 
     if (searchTerm) {
       query = query.orderBy('name').startAt(searchTerm).endAt(searchTerm + '\uf8ff');
     }
 
-    if (reliabilityFilter) {
+    if (reliabilityFilter && reliabilityFilter !== 'all') {
       const [minRelStr, maxRelStr] = reliabilityFilter.split('-');
       const minRel = parseInt(minRelStr, 10);
       const maxRel = parseInt(maxRelStr, 10);
       if (!isNaN(minRel)) query = query.where('reliabilityScore', '>=', minRel);
       if (!isNaN(maxRel)) query = query.where('reliabilityScore', '<=', maxRel);
-      if (!searchTerm) query = query.orderBy('reliabilityScore', 'desc'); // Sort by reliability if not searching by name
+      if (!searchTerm) query = query.orderBy('reliabilityScore', 'desc'); 
     }
 
-    if (leadTimeFilter) {
-      const [minLeadStr, maxLeadPlusStr] = leadTimeFilter.split('-');
+    if (leadTimeFilter && leadTimeFilter !== 'all') {
+      const [minLeadStr, maxLeadPlusStr] = leadTimeFilter.split('-'); // e.g., "15+" -> minLead=15, maxLeadPlusStr="+"
       const minLead = parseInt(minLeadStr, 10);
-      const maxLead = parseInt(maxLeadPlusStr, 10); // Will be NaN if it's "15+"
+      const maxLead = parseInt(maxLeadPlusStr, 10); 
 
       if (!isNaN(minLead)) query = query.where('leadTimeDays', '>=', minLead);
-      if (!isNaN(maxLead)) { // if maxLead is a number
+      if (!isNaN(maxLead)) { 
         query = query.where('leadTimeDays', '<=', maxLead);
+      } else if (maxLeadPlusStr === '+') { // Handle "15+" case
+        // No upper bound for leadTimeDays if it's a "plus" scenario like "15+"
       }
-      // If not searching or filtering by reliability, sort by leadTime
       if (!searchTerm && !reliabilityFilter) query = query.orderBy('leadTimeDays');
     }
     
-    if (!searchTerm && !reliabilityFilter && !leadTimeFilter) {
-        query = query.orderBy('name');
+    if (!searchTerm && !(reliabilityFilter && reliabilityFilter !== 'all') && !(leadTimeFilter && leadTimeFilter !== 'all')) {
+        query = query.orderBy('name'); // Default sort if no other sort-defining filter is active
     }
 
     if (startAfterDocId) {
@@ -120,21 +123,28 @@ export async function POST(request: NextRequest) {
     const productsSupplied: SupplierProductInfo[] = (productsSuppliedSkus || []).map(sku => ({
         productId: sku, 
         sku: sku,
-        name: `Product ${sku}`, 
+        name: `Product ${sku}`, // Placeholder, ideally fetch actual product name if available
     }));
 
     const supplierDocRef = db.collection('suppliers').doc();
-    const fullSupplierData: Omit<SupplierDocument, 'id' | 'createdAt' | 'lastUpdated'> & { createdAt: FirebaseFirestore.FieldValue, lastUpdated: FirebaseFirestore.FieldValue, createdBy: string, lastUpdatedBy: string } = {
+    const fullSupplierData: Omit<SupplierDocument, 'id' | 'createdAt' | 'lastUpdated' | 'deletedAt'> & { createdAt: FirebaseFirestore.FieldValue, lastUpdated: FirebaseFirestore.FieldValue, createdBy: string, lastUpdatedBy: string } = {
       companyId,
       createdBy: userId,
       lastUpdatedBy: userId,
       ...newSupplierData,
-      leadTimeDays: newSupplierData.leadTimeDays ?? 0,
-      reliabilityScore: newSupplierData.reliabilityScore ?? undefined, // Allow undefined if not set
+      leadTimeDays: newSupplierData.leadTimeDays ?? undefined,
+      reliabilityScore: newSupplierData.reliabilityScore ?? undefined,
       moq: newSupplierData.moq ?? undefined,
       productsSupplied: productsSupplied,
       createdAt: FieldValue.serverTimestamp(),
       lastUpdated: FieldValue.serverTimestamp(),
+      // Ensure all optional fields from schema are handled
+      email: newSupplierData.email || undefined,
+      phone: newSupplierData.phone || undefined,
+      address: newSupplierData.address || undefined,
+      contactPerson: newSupplierData.contactPerson || undefined,
+      paymentTerms: newSupplierData.paymentTerms || undefined,
+      notes: newSupplierData.notes || undefined,
     };
 
     await supplierDocRef.set(fullSupplierData);

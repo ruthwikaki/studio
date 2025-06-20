@@ -2,7 +2,7 @@
 "use client";
 
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { InventoryStockDocument } from '@/lib/types/firestore'; // Renamed InventoryItemDocument to InventoryStockDocument
+import type { InventoryStockDocument } from '@/lib/types/firestore';
 import { useToast } from './use-toast';
 import { z } from 'zod';
 
@@ -10,16 +10,16 @@ export const INVENTORY_QUERY_KEY = 'inventoryItems';
 
 // --- Schemas for API validation ---
 export const CreateInventoryItemSchema = z.object({
-  sku: z.string().min(1, "SKU is required"),
-  name: z.string().min(1, "Product name is required"),
+  sku: z.string().min(1, "SKU is required").trim(),
+  name: z.string().min(1, "Product name is required").trim(),
   quantity: z.coerce.number().int().min(0, "Quantity must be non-negative"),
   unitCost: z.coerce.number().min(0, "Unit cost must be non-negative"),
   reorderPoint: z.coerce.number().int().min(0, "Reorder point must be non-negative"),
-  category: z.string().optional().nullable(),
-  description: z.string().optional().nullable(),
+  category: z.string().optional().nullable().transform(val => val?.trim() || null),
+  description: z.string().optional().nullable().transform(val => val?.trim() || null),
   reorderQuantity: z.coerce.number().int().min(0).optional().nullable(),
-  location: z.string().optional().nullable(),
-  imageUrl: z.string().url().optional().nullable(),
+  location: z.string().optional().nullable().transform(val => val?.trim() || null),
+  imageUrl: z.string().url({ message: "Invalid URL format" }).optional().nullable().or(z.literal('')),
 });
 export type CreateInventoryItemInput = z.infer<typeof CreateInventoryItemSchema>;
 
@@ -28,26 +28,35 @@ export type UpdateInventoryItemInput = z.infer<typeof UpdateInventoryItemSchema>
 
 
 interface PaginatedInventoryResponse {
-  data: InventoryStockDocument[];
+  data: InventoryStockDocument[]; // Should be Partial<InventoryStockDocument>[] if fieldsParam is used
   pagination: {
-    currentPage: number;
-    pageSize: number;
-    totalItems: number;
-    totalPages: number;
+    count: number;
+    nextCursor: string | null;
   };
 }
 
-const fetchInventoryItems = async ({ pageParam = 1, queryKey }: any): Promise<PaginatedInventoryResponse> => {
-  const [_key, { filters }] = queryKey;
-  const { searchTerm, category, lowStockOnly } = filters || {};
-  
+interface FetchInventoryParams {
+  pageParam?: string; // startAfterDocId
+  limit?: number;
+  searchTerm?: string;
+  category?: string;
+  lowStockOnly?: boolean;
+}
+
+const fetchInventoryItems = async ({
+  pageParam,
+  limit = 8, // Default to 8 per page
+  searchTerm,
+  category,
+  lowStockOnly,
+}: FetchInventoryParams): Promise<PaginatedInventoryResponse> => {
   const params = new URLSearchParams();
-  params.append('page', pageParam.toString());
-  params.append('limit', '8'); // Display 8 items per page on inventory view
+  params.append('limit', String(limit));
+  if (pageParam) params.append('startAfter', pageParam);
   if (searchTerm) params.append('search', searchTerm);
   if (category && category !== 'all') params.append('category', category);
   if (lowStockOnly) params.append('lowStockOnly', 'true');
-
+  
   const response = await fetch(`/api/inventory?${params.toString()}`);
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ error: 'Failed to fetch inventory' }));
@@ -57,16 +66,17 @@ const fetchInventoryItems = async ({ pageParam = 1, queryKey }: any): Promise<Pa
 };
 
 export function useInventory(filters?: { searchTerm?: string; category?: string; lowStockOnly?: boolean }) {
-  return useInfiniteQuery<PaginatedInventoryResponse, Error>({
+  return useInfiniteQuery<
+    PaginatedInventoryResponse,
+    Error,
+    PaginatedInventoryResponse, // type of data in resolver
+    any, // queryKey type
+    string | undefined // pageParam type
+  >({
     queryKey: [INVENTORY_QUERY_KEY, { filters }],
-    queryFn: fetchInventoryItems,
-    getNextPageParam: (lastPage) => {
-      if (lastPage.pagination.currentPage < lastPage.pagination.totalPages) {
-        return lastPage.pagination.currentPage + 1;
-      }
-      return undefined;
-    },
-    initialPageParam: 1,
+    queryFn: ({ pageParam }) => fetchInventoryItems({ ...filters, pageParam }),
+    getNextPageParam: (lastPage) => lastPage.pagination.nextCursor,
+    initialPageParam: undefined,
   });
 }
 
@@ -124,6 +134,8 @@ export function useUpdateInventoryItem() {
     mutationFn: updateInventoryItem,
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [INVENTORY_QUERY_KEY] });
+      // Also invalidate specific item query if you have one for detail views
+      queryClient.invalidateQueries({ queryKey: [INVENTORY_QUERY_KEY, data.id] });
       toast({ title: 'Success', description: `Item ${data.name || data.id} updated successfully.` });
     },
     onError: (error) => {

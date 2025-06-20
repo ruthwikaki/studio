@@ -16,7 +16,7 @@ export const GET = withAuth(async (request: NextRequest, context: { params: any 
 
   try {
     const { searchParams } = new URL(request.url);
-    const limit = parseInt(searchParams.get('limit') || '10');
+    const limit = parseInt(searchParams.get('limit') || '8'); // Default to 8 for inventory page
     const startAfterDocId = searchParams.get('startAfter'); // For cursor-based pagination
     const category = searchParams.get('category');
     const lowStockOnly = searchParams.get('lowStockOnly') === 'true';
@@ -25,35 +25,18 @@ export const GET = withAuth(async (request: NextRequest, context: { params: any 
     
     let query: FirebaseFirestore.Query<FirebaseFirestore.DocumentData> = db.collection('inventory')
                                                                         .where('companyId', '==', companyId)
-                                                                        .where('deletedAt', '==', null); // Filter out soft-deleted items
+                                                                        .where('deletedAt', '==', null);
 
-    // Apply filters
-    // IMPORTANT: Firestore requires composite indexes for queries with multiple different fields
-    // in where clauses or orderBy clauses. Ensure these are created in your Firestore console.
-    // Example indexes needed:
-    // - (companyId, category, sku)
-    // - (companyId, sku)
-    // - (companyId, quantity) - if lowStockOnly is implemented server-side more directly
     if (category && category !== 'all') {
       query = query.where('category', '==', category);
     }
-    if (lowStockOnly) {
-      // Firestore doesn't directly support quantity <= reorderPoint.
-      // This filtering is best done client-side or by denormalizing an `isLowStock` field.
-      // For now, we'll fetch all and filter post-query (less efficient for large datasets).
-      // Alternative: query by quantity (e.g., quantity < 10) if reorder points are generally low.
-    }
     
     if (searchQuery) {
-       // This basic search requires an index on companyId and sku (or name if you sort by name).
-       // For multi-field search (SKU or Name), you'd typically use a dedicated search service
-       // or query for SKU then query for Name and merge results.
        query = query.orderBy('sku').startAt(searchQuery).endAt(searchQuery + '\uf8ff');
     } else {
-       query = query.orderBy('sku'); // Default sort
+       query = query.orderBy('sku'); 
     }
     
-    console.time(`fetchInventoryList-${companyId}`);
     if (startAfterDocId) {
       const startAfterDoc = await db.collection('inventory').doc(startAfterDocId).get();
       if (startAfterDoc.exists) {
@@ -62,7 +45,6 @@ export const GET = withAuth(async (request: NextRequest, context: { params: any 
     }
     
     const snapshot = await query.limit(limit).get();
-    console.timeEnd(`fetchInventoryList-${companyId}`);
     
     let items: Partial<InventoryStockDocument>[] = snapshot.docs.map(doc => {
       const data = doc.data();
@@ -75,32 +57,31 @@ export const GET = withAuth(async (request: NextRequest, context: { params: any 
         reorderPoint: data.reorderPoint,
         category: data.category,
         imageUrl: data.imageUrl,
-        // Always include essential fields for client-side filtering even if not requested in `fields`
         lastUpdated: (data.lastUpdated as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
         createdAt: (data.createdAt as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
       };
 
       if (fieldsParam) {
         const requestedFields = fieldsParam.split(',');
-        const selectedItem: Partial<InventoryStockDocument> = { id: doc.id }; // Always include id
+        const selectedItem: Partial<InventoryStockDocument> = { id: doc.id }; 
         requestedFields.forEach(field => {
           if (field in data) {
             (selectedItem as any)[field] = data[field];
           }
         });
-        // Ensure essential fields for display/logic are present if not explicitly requested
         if (!selectedItem.sku) selectedItem.sku = data.sku;
         if (!selectedItem.name) selectedItem.name = data.name;
-        if (!selectedItem.quantity) selectedItem.quantity = data.quantity;
+        if (selectedItem.quantity === undefined) selectedItem.quantity = data.quantity; // Use `undefined` check
+        if (selectedItem.reorderPoint === undefined) selectedItem.reorderPoint = data.reorderPoint;
         return selectedItem;
       }
       return itemBase;
     });
 
     if (lowStockOnly) {
-      items = items.filter(item => item.quantity !== undefined && item.reorderPoint !== undefined && item.quantity <= item.reorderPoint && item.reorderPoint > 0);
+      items = items.filter(item => item.quantity !== undefined && item.reorderPoint !== undefined && item.reorderPoint > 0 && item.quantity <= item.reorderPoint);
     }
-     if (searchQuery && !fieldsParam) { // If search was on SKU, and fields weren't restricted, filter by name too
+     if (searchQuery && !fieldsParam && !category) { 
         const lowerSearchQuery = searchQuery.toLowerCase();
         items = items.filter(item => 
             item.sku?.toLowerCase().includes(lowerSearchQuery) ||
@@ -113,7 +94,7 @@ export const GET = withAuth(async (request: NextRequest, context: { params: any 
     return NextResponse.json({
       data: items,
       pagination: { 
-          count: items.length, // Count of items in current page
+          count: items.length, 
           nextCursor: nextCursor
       },
     });
@@ -155,7 +136,7 @@ export const POST = withAuth(async (request: NextRequest, context: { params: any
     }
 
     const newItemRef = db.collection('inventory').doc();
-    const newItemData: Omit<InventoryStockDocument, 'id' | 'deletedAt'> = { // Ensure deletedAt is not set on create
+    const newItemData: Omit<InventoryStockDocument, 'id' | 'deletedAt'> = { 
       ...itemData,
       companyId,
       productId: itemData.sku, 
@@ -164,6 +145,12 @@ export const POST = withAuth(async (request: NextRequest, context: { params: any
       lastUpdated: FieldValue.serverTimestamp() as FirebaseFirestore.Timestamp,
       createdAt: FieldValue.serverTimestamp() as FirebaseFirestore.Timestamp,
       lowStockAlertSent: false,
+      // Ensure all optional fields from schema have a default if not provided
+      description: itemData.description || undefined,
+      reorderQuantity: itemData.reorderQuantity || undefined,
+      location: itemData.location || undefined,
+      imageUrl: itemData.imageUrl || undefined,
+      category: itemData.category || undefined,
     };
 
     await newItemRef.set(newItemData);
