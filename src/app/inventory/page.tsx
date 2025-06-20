@@ -63,7 +63,10 @@ export default function InventoryPage() {
   const inventoryFilters = useMemo(() => ({
     searchTerm: debouncedSearchTerm,
     category: filterCategory,
-    lowStockOnly: filterStockHealth === 'critical', // Example how to map health to API param
+    // Map stock health filter to API compatible parameter if needed.
+    // For now, `lowStockOnly` is the main API-level health filter.
+    // More complex health status filtering is done client-side below.
+    lowStockOnly: filterStockHealth === 'critical', 
   }), [debouncedSearchTerm, filterCategory, filterStockHealth]);
 
   const {
@@ -87,20 +90,26 @@ export default function InventoryPage() {
   const allItems = useMemo(() => {
     let items = data?.pages.flatMap(page => page.data) ?? [];
     // Client-side filtering for stock health if not fully handled by API or needs refinement
-    if (filterStockHealth !== 'all' && !inventoryFilters.lowStockOnly) { // Avoid double-filtering if lowStockOnly API param is used
+    // This is applied AFTER API might have already filtered for lowStockOnly=true (critical).
+    if (filterStockHealth !== 'all') { 
       items = items.filter(item => {
         const status = getStatus(item);
         if (filterStockHealth === 'critical' && (status === 'Out of Stock' || status === 'Low Stock')) return true;
         if (filterStockHealth === 'healthy' && status === 'In Stock') return true;
         if (filterStockHealth === 'overstocked' && status === 'Overstocked') return true;
-        return false;
+        // If filterStockHealth is 'critical', API already filtered by lowStockOnly=true,
+        // so no need to re-filter here unless API logic is more coarse.
+        // If filterStockHealth is 'all', this block is skipped.
+        return false; // Item doesn't match non-'all' client-side health filter
       });
     }
     return items;
-  }, [data, filterStockHealth, inventoryFilters.lowStockOnly]);
+  }, [data, filterStockHealth]);
   
   const categories = useMemo(() => {
-    const uniqueCategories = new Set(data?.pages.flatMap(page => page.data).map(item => item.category).filter(Boolean) as string[]);
+    // Ensure data and data.pages are defined before trying to flatMap
+    const allFetchedItems = data?.pages?.flatMap(page => page.data) ?? [];
+    const uniqueCategories = new Set(allFetchedItems.map(item => item.category).filter(Boolean) as string[]);
     return Array.from(uniqueCategories);
   }, [data]);
 
@@ -115,7 +124,14 @@ export default function InventoryPage() {
   };
 
   if (isError && !isLoading) { 
-    return <div className="text-destructive-foreground bg-destructive p-4 rounded-md">Error loading inventory: {error?.message}</div>;
+    return (
+        <div className="flex flex-col items-center justify-center h-full text-center p-6">
+            <AlertCircle className="w-16 h-16 text-destructive mb-4" />
+            <h2 className="text-2xl font-semibold mb-2">Error Loading Inventory</h2>
+            <p className="text-muted-foreground mb-4">{error?.message || "An unexpected error occurred. Please check server logs for more details, especially for missing Firestore indexes."}</p>
+            <Button onClick={() => window.location.reload()}>Retry</Button>
+        </div>
+    );
   }
 
   return (

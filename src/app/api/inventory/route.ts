@@ -9,42 +9,58 @@ import { CreateInventoryItemSchema } from '@/hooks/useInventory';
 
 
 export const GET = withAuth(async (request: NextRequest, context: { params: any }, user: VerifiedUser) => {
+  console.log('[API /inventory GET] Request received.');
   if (!requireRole(user.role, 'viewer')) {
+    console.warn(`[API /inventory GET] Authorization failed. User role '${user.role}' does not meet minimum 'viewer'.`);
     return NextResponse.json({ error: 'Access denied.' }, { status: 403 });
   }
   const { companyId } = user;
+  console.log(`[API /inventory GET] Authenticated. User ID: ${user.uid}, Company ID: ${companyId}`);
 
   try {
     const { searchParams } = new URL(request.url);
-    const limit = parseInt(searchParams.get('limit') || '8'); // Default to 8 for inventory page
-    const startAfterDocId = searchParams.get('startAfter'); // For cursor-based pagination
+    const limit = parseInt(searchParams.get('limit') || '8');
+    const startAfterDocId = searchParams.get('startAfter');
     const category = searchParams.get('category');
     const lowStockOnly = searchParams.get('lowStockOnly') === 'true';
     const searchQuery = searchParams.get('search');
     const fieldsParam = searchParams.get('fields');
     
+    console.log(`[API /inventory GET] Query Params: limit=${limit}, startAfter=${startAfterDocId}, category=${category}, lowStockOnly=${lowStockOnly}, search=${searchQuery}, fields=${fieldsParam}`);
+
     let query: FirebaseFirestore.Query<FirebaseFirestore.DocumentData> = db.collection('inventory')
                                                                         .where('companyId', '==', companyId)
                                                                         .where('deletedAt', '==', null);
 
     if (category && category !== 'all') {
+      console.log(`[API /inventory GET] Applying category filter: ${category}`);
       query = query.where('category', '==', category);
     }
     
+    // Firestore query construction needs careful ordering of orderBy and where clauses.
+    // If searchQuery is present, we typically want to order by the field we're searching on (e.g., sku or name).
+    // For simplicity, if searchQuery is present, we'll order by SKU and assume search is on SKU.
+    // More complex search would require more advanced indexing or a dedicated search service.
     if (searchQuery) {
-       query = query.orderBy('sku').startAt(searchQuery).endAt(searchQuery + '\uf8ff');
+      console.log(`[API /inventory GET] Applying search query: ${searchQuery} (on SKU)`);
+      query = query.orderBy('sku').startAt(searchQuery).endAt(searchQuery + '\uf8ff');
     } else {
-       query = query.orderBy('sku'); 
+      // Default sort order if no search query
+      query = query.orderBy('sku'); 
     }
     
     if (startAfterDocId) {
+      console.log(`[API /inventory GET] Applying pagination: starting after doc ID ${startAfterDocId}`);
       const startAfterDoc = await db.collection('inventory').doc(startAfterDocId).get();
       if (startAfterDoc.exists) {
         query = query.startAfter(startAfterDoc);
+      } else {
+        console.warn(`[API /inventory GET] StartAfter document ID ${startAfterDocId} not found.`);
       }
     }
     
     const snapshot = await query.limit(limit).get();
+    console.log(`[API /inventory GET] Firestore query executed. Found ${snapshot.docs.length} documents.`);
     
     let items: Partial<InventoryStockDocument>[] = snapshot.docs.map(doc => {
       const data = doc.data();
@@ -69,19 +85,25 @@ export const GET = withAuth(async (request: NextRequest, context: { params: any 
             (selectedItem as any)[field] = data[field];
           }
         });
-        if (!selectedItem.sku) selectedItem.sku = data.sku;
-        if (!selectedItem.name) selectedItem.name = data.name;
-        if (selectedItem.quantity === undefined) selectedItem.quantity = data.quantity; // Use `undefined` check
-        if (selectedItem.reorderPoint === undefined) selectedItem.reorderPoint = data.reorderPoint;
+        // Ensure essential fields are present if requested specific fields
+        if (!selectedItem.sku && data.sku) selectedItem.sku = data.sku;
+        if (!selectedItem.name && data.name) selectedItem.name = data.name;
+        if (selectedItem.quantity === undefined && data.quantity !== undefined) selectedItem.quantity = data.quantity;
+        if (selectedItem.reorderPoint === undefined && data.reorderPoint !== undefined) selectedItem.reorderPoint = data.reorderPoint;
         return selectedItem;
       }
       return itemBase;
     });
 
+    // Low stock filtering is done client-side in the hook if not handled by API query directly
+    // This is because Firestore cannot directly compare two fields (quantity <= reorderPoint)
     if (lowStockOnly) {
+      console.log(`[API /inventory GET] Applying lowStockOnly filter client-side (API part)`);
       items = items.filter(item => item.quantity !== undefined && item.reorderPoint !== undefined && item.reorderPoint > 0 && item.quantity <= item.reorderPoint);
     }
+    // Search query filtering (name contains) is also better done client-side if not covered by SKU prefix search
      if (searchQuery && !fieldsParam && !category) { 
+        console.log(`[API /inventory GET] Applying additional client-side search filter for name on ${items.length} items.`);
         const lowerSearchQuery = searchQuery.toLowerCase();
         items = items.filter(item => 
             item.sku?.toLowerCase().includes(lowerSearchQuery) ||
@@ -90,6 +112,7 @@ export const GET = withAuth(async (request: NextRequest, context: { params: any 
     }
 
     const nextCursor = snapshot.docs.length === limit ? snapshot.docs[snapshot.docs.length - 1].id : null;
+    console.log(`[API /inventory GET] Responding with ${items.length} items. Next cursor: ${nextCursor}`);
     
     return NextResponse.json({
       data: items,
@@ -100,12 +123,16 @@ export const GET = withAuth(async (request: NextRequest, context: { params: any 
     });
 
   } catch (error: any) {
-    console.error('Error fetching inventory:', error);
-    if (error.code === 'failed-precondition') {
-      return NextResponse.json({ error: 'Query requires a Firestore index. Check server logs for details and a link to create it.', details: error.message }, { status: 400 });
+    console.error('[API /inventory GET] Error fetching inventory:', error);
+    if (error.code === 'failed-precondition' || (error.message && error.message.includes("requires an index"))) {
+      console.error(`[API /inventory GET] Firestore missing index detected. Error message: ${error.message}. Link to create index might be present in this error.`);
+      return NextResponse.json({ 
+        error: 'Query requires a Firestore index. Please check server logs for details and a link to create it.', 
+        details: error.message 
+      }, { status: 400 });
     }
     const message = error.message || 'Failed to fetch inventory items.';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message, details: error.stack ? error.stack.substring(0,300) : null }, { status: 500 });
   }
 });
 

@@ -59,8 +59,8 @@ const fetchInventoryItems = async ({
   
   const response = await fetch(`/api/inventory?${params.toString()}`);
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ error: 'Failed to fetch inventory' }));
-    throw new Error(errorData.error || 'Failed to fetch inventory');
+    const errorData = await response.json().catch(() => ({ error: 'Failed to fetch inventory', details: 'Server returned non-JSON error' }));
+    throw new Error(errorData.error || 'Failed to fetch inventory. ' + (errorData.details || ''));
   }
   return response.json();
 };
