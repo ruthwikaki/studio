@@ -3,68 +3,91 @@ import * as admin from 'firebase-admin';
 import * as fs from 'fs';
 import * as path from 'path';
 
-// Construct an absolute path to 'service-account-key.json' in the project root
-const serviceAccountPath = path.join(process.cwd(), 'service-account-key.json');
-let adminApp: admin.app.App;
+let adminInstance: admin.app.App | null = null;
 
-try {
-  if (!admin.apps.length) {
-    console.log(`[Admin SDK] Attempting to load service account key from: ${serviceAccountPath}`);
-    if (!fs.existsSync(serviceAccountPath)) {
-      throw new Error(`Service account key file not found at resolved path: ${serviceAccountPath}. Ensure 'service-account-key.json' is in the project root.`);
-    }
+function initializeAdminAppSingleton(): admin.app.App | null {
+  if (adminInstance) {
+    return adminInstance;
+  }
+
+  if (admin.apps.length > 0) {
+    console.log(`[Admin SDK] Using existing Firebase Admin app instance.`);
+    adminInstance = admin.app();
+    return adminInstance;
+  }
+
+  // Construct an absolute path to 'service-account-key.json' from the project root
+  const serviceAccountPath = path.resolve(process.cwd(), 'service-account-key.json');
+  console.log(`[Admin SDK] Attempting to initialize Firebase Admin. Service account path: ${serviceAccountPath}`);
+
+  if (!fs.existsSync(serviceAccountPath)) {
+    console.error("--------------------------------------------------------------------");
+    console.error(`[Admin SDK] CRITICAL ERROR: Service account key file not found at resolved path: ${serviceAccountPath}.`);
+    console.error("[Admin SDK] Ensure 'service-account-key.json' (downloaded from your Firebase project settings) is in the project root directory.");
+    console.error("[Admin SDK] Firebase Admin services (db, authAdmin, storageAdmin) will NOT be available.");
+    console.error("--------------------------------------------------------------------");
+    return null;
+  }
+
+  try {
     const serviceAccountFileContent = fs.readFileSync(serviceAccountPath, 'utf8');
     const serviceAccount = JSON.parse(serviceAccountFileContent);
 
     if (!serviceAccount.project_id) {
-        throw new Error("Service account key file is missing 'project_id'. Ensure it's the correct key from Firebase.");
+      console.error("--------------------------------------------------------------------");
+      console.error("[Admin SDK] CRITICAL ERROR: Service account key file is missing 'project_id'. Ensure it's the correct key from Firebase.");
+      console.error("[Admin SDK] Firebase Admin services (db, authAdmin, storageAdmin) will NOT be available.");
+      console.error("--------------------------------------------------------------------");
+      return null;
     }
 
-    adminApp = admin.initializeApp({
+    adminInstance = admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
-      projectId: serviceAccount.project_id, // Ensure projectId is explicitly set
-      // No databaseURL needed if using (default) Firestore and not Realtime Database primarily here.
+      projectId: serviceAccount.project_id,
     });
-    console.log(`Firebase Admin SDK initialized in admin.ts for project: ${serviceAccount.project_id}. Targeting (default) Firestore database.`);
-  } else {
-    adminApp = admin.app(); // Use the existing app
-    const currentAppProjectId = adminApp.options.projectId;
-    if (currentAppProjectId) {
-        console.log(`Firebase Admin SDK already initialized for project: ${currentAppProjectId}. Targeting (default) Firestore database.`);
+    console.log(`[Admin SDK] Firebase Admin SDK initialized successfully for project: ${serviceAccount.project_id}.`);
+    return adminInstance;
+
+  } catch (error: any) {
+    console.error("--------------------------------------------------------------------");
+    console.error("[Admin SDK] CRITICAL ERROR INITIALIZING FIREBASE ADMIN SDK:");
+    if (error.code === 'ENOENT' || (error.message && error.message.toLowerCase().includes("no such file or directory"))) {
+      console.error(`  Reason: The 'service-account-key.json' file was not found or was unreadable.`);
+      console.error(`  Checked path: ${serviceAccountPath}`);
+    } else if (error.message && (error.message.includes("Failed to parse service account KeyFile") || error.message.includes("Credential implementation provided to initializeApp()"))) {
+       console.error("  Reason: The 'service-account-key.json' file seems to be invalid or incomplete (e.g., not valid JSON).");
     } else {
-        console.warn("Firebase Admin SDK was already initialized, but project ID could not be determined. Targeting (default) Firestore database.");
+      console.error("  Reason:", error.message);
+      if (error.stack) console.error("  Stack (partial):", error.stack.substring(0, 500));
     }
+    console.error("  ACTION: Please ensure 'service-account-key.json' is valid and placed in the project root directory.");
+    console.error("[Admin SDK] Firebase Admin services (db, authAdmin, storageAdmin) will NOT be available.");
+    console.error("--------------------------------------------------------------------");
+    return null;
   }
-} catch (error: any) {
-  console.error("--------------------------------------------------------------------");
-  console.error("CRITICAL ERROR INITIALIZING FIREBASE ADMIN SDK in admin.ts:");
-  if (error.message && error.message.includes("Service account key file not found at resolved path")) {
-    console.error(`  Reason: ${error.message}`);
-  } else if (error.code === 'ENOENT' || (error.message && error.message.toLowerCase().includes("no such file or directory"))) {
-    console.error(`  Reason: The 'service-account-key.json' file was not found.`);
-    console.error(`  Expected at: ${serviceAccountPath}`);
-  } else if (error.message && (error.message.includes("Failed to parse service account KeyFile") || error.message.includes("Credential implementation provided to initializeApp()"))) {
-     console.error("  Reason: The 'service-account-key.json' file seems to be invalid or incomplete (e.g., missing 'project_id', not valid JSON).");
-  } else if (error.message && error.message.includes("Service account key file is missing 'project_id'")) {
-      console.error("  Reason: The 'service-account-key.json' is missing the 'project_id' field.");
-  } else {
-    console.error("  Reason:", error.message);
-    if (error.stack) console.error("  Stack:", error.stack);
-  }
-  console.error("  ACTION: Please ensure your 'service-account-key.json' (downloaded from your Firebase project settings) is valid and placed in the project root directory.");
-  console.error("--------------------------------------------------------------------");
-  // process.exit(1); // Consider re-throwing or exiting if critical for server startup
 }
 
-// Get Firestore instance for the (default) database.
-// This connects to the (default) database instance by default.
-export const db = adminApp!.firestore(); // Use adminApp to ensure it's from the initialized app.
-console.log(`[Admin SDK] Firestore instance configured for (default) database.`);
+// Initialize on module load
+adminInstance = initializeAdminAppSingleton();
 
+// Conditionally export services. If adminInstance is null, these will be null.
+// Code using these exports MUST check if they are null/undefined before use.
+export const db = adminInstance ? adminInstance.firestore() : null;
+export const authAdmin = adminInstance ? adminInstance.auth() : null;
+export const storageAdmin = adminInstance ? adminInstance.storage() : null;
 
-export const authAdmin = adminApp!.auth();
-export const storageAdmin = adminApp!.storage();
+// Static exports from admin.firestore are safe regardless of initialization success
 export const FieldValue = admin.firestore.FieldValue;
 export const AdminTimestamp = admin.firestore.Timestamp;
 export type { Timestamp as AdminTimestampType } from 'firebase-admin/firestore';
-export { admin }; // Export the admin namespace itself
+
+// Export the admin namespace itself, useful for types or other static utilities
+export { admin };
+
+/**
+ * Checks if the Firebase Admin SDK has been successfully initialized.
+ * @returns {boolean} True if initialized, false otherwise.
+ */
+export function isAdminInitialized(): boolean {
+  return adminInstance !== null && db !== null && authAdmin !== null;
+}
