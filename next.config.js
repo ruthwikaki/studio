@@ -13,7 +13,12 @@ const nextConfig = {
       },
     ],
   },
-  // Ensure no experimental flags are causing issues, keep it minimal
+  experimental: {
+    // This option tells Next.js to keep 'firebase-admin' as an external package
+    // for server-side rendering and API routes, which can help with CJS compatibility.
+    serverComponentsExternalPackages: ['firebase-admin'],
+  },
+  // Ensure no other experimental flags are causing issues, keep it minimal
 };
 
 module.exports = nextConfig;
