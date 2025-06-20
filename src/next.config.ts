@@ -1,2 +1,2 @@
-// This file has been cleared because Next.js configuration should only exist in the project root.
-// The correct configuration is located in /next.config.ts.
+// This file is intentionally left blank.
+// Next.js configuration should only exist in the project root at /next.config.ts.
