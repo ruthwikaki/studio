@@ -10,7 +10,7 @@ import { z } from 'zod';
 const ChatRequestSchema = z.object({
   message: z.string().min(1),
   sessionId: z.string().optional(),
-  // inventoryDataOverride is removed as context is now built server-side
+  inventoryDataOverride: z.string().optional().describe("A JSON string of inventory data to use instead of fetching from Firestore. Useful for 'what-if' or temporary context."),
 });
 
 export async function POST(request: NextRequest) {
@@ -31,34 +31,51 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid request data.', details: validationResult.error.format() }, { status: 400 });
     }
 
-    const { message: userQuery, sessionId: existingSessionId } = validationResult.data;
+    const { message: userQuery, sessionId: existingSessionId, inventoryDataOverride } = validationResult.data;
     let currentSessionId = existingSessionId;
     let conversationHistory: FirestoreChatMessage[] = [];
 
-    // --- Fetch Comprehensive Context ---
+    // --- Build Chat Context ---
     const chatContextData: ChatContext = {};
+    let contextSourceDescription = "Live Company Data";
 
-    // 1. Inventory Summary & Low Stock
-    const inventorySnapshot = await db.collection('inventory')
-                                      .where('companyId', '==', companyId)
-                                      .get();
-    let totalItems = 0;
-    let totalValue = 0;
-    const lowStockItems: ChatContext['lowStockItems'] = [];
-    inventorySnapshot.docs.forEach(doc => {
-      const item = doc.data() as InventoryStockDocument;
-      totalItems++;
-      totalValue += (item.quantity || 0) * (item.unitCost || 0);
-      if (item.reorderPoint > 0 && (item.quantity || 0) <= item.reorderPoint) {
-        lowStockItems.push({ sku: item.sku, name: item.name, quantity: item.quantity, reorderPoint: item.reorderPoint });
-      }
-    });
-    chatContextData.inventorySummary = { totalItems, totalValue };
-    if (lowStockItems.length > 0) {
-      chatContextData.lowStockItems = lowStockItems;
+    if (inventoryDataOverride) {
+        try {
+            const overrideData = JSON.parse(inventoryDataOverride) as Partial<InventoryStockDocument>[];
+            // Build summary and low stock from override data
+            chatContextData.inventorySummary = {
+                totalItems: overrideData.length,
+                totalValue: overrideData.reduce((sum, item) => sum + (item.quantity || 0) * (item.unitCost || 0), 0),
+            };
+            chatContextData.lowStockItems = overrideData
+                .filter(item => item.reorderPoint && item.reorderPoint > 0 && (item.quantity || 0) <= item.reorderPoint)
+                .map(item => ({ sku: item.sku!, name: item.name!, quantity: item.quantity!, reorderPoint: item.reorderPoint! }));
+            contextSourceDescription = "Provided Data Override";
+        } catch (e) {
+            console.error("Error parsing inventoryDataOverride:", e);
+            return NextResponse.json({ error: 'Invalid inventoryDataOverride JSON format.' }, { status: 400 });
+        }
+    } else {
+        // Fetch live inventory data if no override
+        const inventorySnapshot = await db.collection('inventory')
+                                          .where('companyId', '==', companyId)
+                                          .get();
+        let totalItems = 0;
+        let totalValue = 0;
+        const lowStockItems: NonNullable<ChatContext['lowStockItems']> = [];
+        inventorySnapshot.docs.forEach(doc => {
+          const item = doc.data() as InventoryStockDocument;
+          totalItems++;
+          totalValue += (item.quantity || 0) * (item.unitCost || 0);
+          if (item.reorderPoint && item.reorderPoint > 0 && (item.quantity || 0) <= item.reorderPoint) {
+            lowStockItems.push({ sku: item.sku, name: item.name, quantity: item.quantity, reorderPoint: item.reorderPoint });
+          }
+        });
+        chatContextData.inventorySummary = { totalItems, totalValue };
+        if (lowStockItems.length > 0) chatContextData.lowStockItems = lowStockItems;
     }
 
-    // 2. Recent Orders Summary (last 30 days, purchase orders)
+    // Fetch other context regardless of override (orders, suppliers, sales trends)
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const recentOrdersSnapshot = await db.collection('orders')
@@ -76,19 +93,17 @@ export async function POST(request: NextRequest) {
     });
     chatContextData.recentOrdersSummary = { pendingPurchaseOrders, awaitingDeliveryPurchaseOrders };
 
-    // 3. Top Suppliers (Top 3 by reliability score, or just recent if no scores)
     const suppliersSnapshot = await db.collection('suppliers')
                                      .where('companyId', '==', companyId)
-                                     .orderBy('reliabilityScore', 'desc') // Order by score if available
-                                     .limit(5) // Limit to a few top/recent suppliers
+                                     .orderBy('reliabilityScore', 'desc') 
+                                     .limit(5) 
                                      .get();
     chatContextData.topSuppliers = suppliersSnapshot.docs.map(doc => {
         const sup = doc.data() as SupplierDocument;
         return { id: sup.id, name: sup.name, reliabilityScore: sup.reliabilityScore };
     });
     
-    // 4. Sales Trends Summary (Simplified for now)
-    chatContextData.salesTrendsSummary = "Sales data is available. Ask about specific products or overall performance for more detailed insights. For example, 'How has SKU001 sold recently?' or 'What are my best selling items?'.";
+    chatContextData.salesTrendsSummary = `Sales trends based on ${contextSourceDescription}. Ask about specific products or overall performance.`;
 
     // --- Chat History and Session Management ---
     if (currentSessionId) {
@@ -98,22 +113,21 @@ export async function POST(request: NextRequest) {
         if (sessionData.companyId === companyId && sessionData.userId === userId) {
           conversationHistory = sessionData.messages.map(msg => ({
             ...msg,
-            timestamp: (msg.timestamp as AdminTimestamp).toDate() // Ensure JS Date for history
+            timestamp: (msg.timestamp as AdminTimestamp).toDate() 
           }));
         } else {
-          // Session belongs to another user/company, treat as new
           currentSessionId = undefined;
           conversationHistory = [];
         }
       } else {
-        currentSessionId = undefined; // Session not found
+        currentSessionId = undefined; 
       }
     }
     
     const chatInput: InventoryChatInput = {
       query: userQuery,
       chatContext: chatContextData,
-      conversationHistory: conversationHistory.map(msg => ({ role: msg.role, content: msg.content })), // For AI, content only
+      conversationHistory: conversationHistory.map(msg => ({ role: msg.role, content: msg.content })),
     };
 
     const aiResult: InventoryChatOutput = await inventoryChat(chatInput);
@@ -128,7 +142,7 @@ export async function POST(request: NextRequest) {
       await sessionRef.update({
         messages: FieldValue.arrayUnion(userMessageEntry, assistantMessageEntry),
         lastMessageAt: FieldValue.serverTimestamp(),
-        contextSnapshot, // Update with the latest context for this turn
+        contextSnapshot: contextSnapshotString, // Update with the latest context for this turn
       });
     } else {
       const newSessionRef = db.collection('chat_sessions').doc();
@@ -147,15 +161,24 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ 
         data: { 
-            ...aiResult, // Includes answer, data, suggestedActions, confidence
+            answer: aiResult.answer,
+            data: aiResult.data,
+            suggestedActions: aiResult.suggestedActions,
+            confidence: aiResult.confidence,
             sessionId: currentSessionId 
         } 
     });
 
-  } catch (error: any) {
+  } catch (error: any)
+{
     console.error('Error processing chat message:', error);
     const message = error.message || 'Failed to process chat message.';
+    // If it's a ZodError from parsing, provide more specific feedback
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: 'Invalid request payload structure.', details: error.format() }, { status: 400 });
+    }
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
+    
