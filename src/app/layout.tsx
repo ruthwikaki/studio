@@ -1,13 +1,10 @@
 
 import type { Metadata } from 'next';
-import './globals.css';
-import { Toaster } from "@/components/ui/toaster";
-import AppLayout from '@/components/layout/AppLayout';
-import QueryProvider from '@/components/providers/QueryProvider';
+import './globals.css'; // Basic CSS
 
 export const metadata: Metadata = {
-  title: 'ARIA',
-  description: 'AI-Powered Supply Chain Management',
+  title: 'ARIA - Minimal Test',
+  description: 'Minimal Next.js app for testing API routes.',
 };
 
 export default function RootLayout({
@@ -15,21 +12,11 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  console.log('[RootLayout] Rendering layout...');
   return (
-    <html lang="en" suppressHydrationWarning>
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-        <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-      </head>
-      <body className="font-body antialiased bg-background text-foreground" suppressHydrationWarning={true}>
-        <QueryProvider>
-          <AppLayout>
-            {children}
-          </AppLayout>
-        </QueryProvider>
-        <Toaster />
+    <html lang="en">
+      <body>
+        <main>{children}</main>
       </body>
     </html>
   );

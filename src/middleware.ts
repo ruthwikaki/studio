@@ -1,18 +1,14 @@
-// src/middleware.ts
+
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-console.log('[Middleware] File loaded by Next.js.');
-
 export function middleware(request: NextRequest) {
   const { pathname, method } = request;
-  console.log(`[Middleware] Path: ${pathname}, Method: ${method}`);
+  console.log(`[Simplified Middleware] Request to: ${pathname}, Method: ${method}`);
 
   if (pathname.startsWith('/api/')) {
-    console.log(`[Middleware] Processing API request: ${method} ${pathname}`);
-
     if (method === 'OPTIONS') {
-      console.log(`[Middleware] Handling OPTIONS preflight for API route: ${pathname}`);
+      console.log(`[Simplified Middleware] Handling OPTIONS preflight for API route: ${pathname}`);
       const response = new NextResponse(null, { status: 204 });
       response.headers.set('Access-Control-Allow-Origin', '*');
       response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -20,20 +16,17 @@ export function middleware(request: NextRequest) {
       response.headers.set('Access-Control-Max-Age', '86400');
       return response;
     }
-    
-    // For actual API requests, allow them to proceed to the Next.js router
-    // and add basic CORS headers to the actual response.
+    console.log(`[Simplified Middleware] Allowing API request to proceed: ${pathname}`);
     const response = NextResponse.next();
-    response.headers.set('Access-Control-Allow-Origin', '*'); // Be more specific in production
-    console.log(`[Middleware] Passing through API request for: ${pathname} to Next.js handler.`);
+    response.headers.set('Access-Control-Allow-Origin', '*'); // Basic CORS for API responses
     return response;
-
   }
 
-  console.log(`[Middleware] Passing through non-API request: ${pathname}`);
+  console.log(`[Simplified Middleware] Allowing non-API request to proceed: ${pathname}`);
   return NextResponse.next();
 }
 
+// Match only API routes for now to be less intrusive
 export const config = {
-  matcher: ['/api/:path*'],
+  matcher: '/api/:path*',
 };

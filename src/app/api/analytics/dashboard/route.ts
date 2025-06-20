@@ -1,171 +1,58 @@
 
-import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
 import { getDb, isAdminInitialized, getInitializationError, admin } from '@/lib/firebase/admin';
-import { verifyAuthToken } from '@/lib/firebase/admin-auth';
-import type { InventoryStockDocument, OrderDocument, SalesHistoryDocument, DailyAggregateDocument } from '@/lib/types/firestore';
+// Types are removed as Firebase Admin is stubbed, they would cause type errors
+// import type { InventoryStockDocument, OrderDocument, SalesHistoryDocument, DailyAggregateDocument } from '@/lib/types/firestore';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 console.log('[API /api/analytics/dashboard/route.ts] File loaded by Next.js runtime.');
 
-
 export async function GET(request: NextRequest) {
   console.log("[Analytics Dashboard API] Request received at entry point.");
   
   if (!isAdminInitialized()) {
     const initErrorMsg = getInitializationError(); 
-    const detailedErrorMessage = `Firebase Admin SDK not initialized. Reason: ${initErrorMsg || 'Unknown initialization error. Please check server startup logs from admin.ts, especially for messages about service-account-key.json.'}`;
+    const detailedErrorMessage = `Firebase Admin SDK not initialized. Reason: ${initErrorMsg || 'Unknown initialization error from stub.'}`;
     console.error(`[Analytics Dashboard API] AT ENTRY: ${detailedErrorMessage}`);
     return NextResponse.json({ error: `Server configuration error: ${detailedErrorMessage}` }, { status: 500 });
   }
 
   const db = getDb();
-  if (!db) {
+  if (!db) { // This will always be true with the current stub
     const initErrorMsg = getInitializationError(); 
-    const detailedErrorMessage = `Firestore instance (db) is null. Reason: ${initErrorMsg || 'This usually means Admin SDK initialization failed critically earlier or getDb() failed. Check server startup logs.'}`;
-    console.error(`[Analytics Dashboard API] AFTER SDK INIT CHECK BUT DB IS NULL: ${detailedErrorMessage}`);
-    return NextResponse.json({ error: `Server configuration error: ${detailedErrorMessage}` }, { status: 500 });
+    const detailedErrorMessage = `Firestore instance (db) is null from stub. Reason: ${initErrorMsg || 'Firebase Admin SDK stub does not provide a real DB instance.'}`;
+    console.error(`[Analytics Dashboard API] DB IS NULL (from stub): ${detailedErrorMessage}`);
+    return NextResponse.json({ error: `Server configuration error (stub): ${detailedErrorMessage}` }, { status: 500 });
   }
   
-  let companyId: string;
-  let userId: string;
-  try {
-    const authResult = await verifyAuthToken(request); 
-    companyId = authResult.companyId;
-    userId = authResult.uid;
-    console.log(`[Analytics Dashboard API] Authenticated successfully. User ID: ${userId}, Company ID: ${companyId}`);
-  } catch (authError: any) {
-    console.error("[Analytics Dashboard API] AUTHENTICATION ERROR:", authError.message, authError.stack);
-    return NextResponse.json({ error: `Authentication failed: ${authError.message || 'Unknown auth error'}` }, { status: 401 });
-  }
-
-  if (!companyId) {
-    console.error("[Analytics Dashboard API] CRITICAL: Company ID is undefined after successful-looking authentication. This should not happen.");
-    return NextResponse.json({ error: "Company ID missing after authentication." }, { status: 500 });
-  }
-  console.log(`[Analytics Dashboard API] Processing dashboard request for companyId: ${companyId}`);
+  // The following code will not execute correctly with the stubbed Firebase Admin
+  // but is kept to show structure. The route will return 500 due to db being null.
+  let companyId: string = "mock_company_id_stub"; // Stubbed for compilation
+  let userId: string = "mock_user_id_stub"; // Stubbed for compilation
+  // Actual auth would be needed here if Firebase Admin was live.
 
   try {
-    const todayForAggId = new Date();
-    todayForAggId.setUTCHours(0,0,0,0);
-    const todayStr = todayForAggId.toISOString().split('T')[0];
-    const aggregateDocId = `${companyId}_${todayStr}`;
-    const aggregateDocRef = db.collection('daily_aggregates').doc(aggregateDocId);
-
-    console.log(`[Analytics Dashboard API] Attempting to fetch aggregate document: ${aggregateDocId}`);
-    const aggregateDocSnap = await aggregateDocRef.get();
-
-    if (aggregateDocSnap.exists) {
-      const aggData = aggregateDocSnap.data() as DailyAggregateDocument;
-      console.log(`[Analytics Dashboard API] Aggregate document ${aggregateDocId} FOUND.`);
-
-      const kpis = {
-        totalInventoryValue: typeof aggData.totalInventoryValue === 'number' ? aggData.totalInventoryValue : 0,
-        lowStockItemsCount: typeof aggData.lowStockItemsCount === 'number' ? aggData.lowStockItemsCount : 0,
-        outOfStockItemsCount: typeof aggData.outOfStockItemsCount === 'number' ? aggData.outOfStockItemsCount : 0,
+    // This part of the code will not work with the stubbed Firebase Admin SDK.
+    // It's here for structural completeness if Firebase Admin is re-enabled.
+    console.warn("[Analytics Dashboard API] Attempting to use Firestore, but it's stubbed. Expect errors or empty data.");
+    const kpis = {
+        totalInventoryValue: 0,
+        lowStockItemsCount: 0,
+        outOfStockItemsCount: 0,
         pendingOrdersCount: 0, 
-        todaysRevenue: typeof aggData.todaysRevenue === 'number' ? aggData.todaysRevenue : 0,
-        inventoryValueByCategory: aggData.inventoryValueByCategory || {},
-        lastUpdated: (aggData.lastCalculated as Fadmin.firestore.Timestamp)?.toDate()?.toISOString() || new Date().toISOString(),
-        turnoverRate: typeof aggData.turnoverRate === 'number' ? aggData.turnoverRate : undefined,
-      };
-
-      const pendingOrdersSnapshot = await db.collection('orders')
-                                          .where('companyId', '==', companyId)
-                                          .where('type', '==', 'purchase')
-                                          .where('status', 'in', ['pending', 'pending_approval', 'processing', 'awaiting_shipment'])
-                                          .where('deletedAt', '==', null)
-                                          .count()
-                                          .get();
-      kpis.pendingOrdersCount = pendingOrdersSnapshot.data().count;
-      console.log(`[Analytics Dashboard API] KPIs from AGGREGATE (Pending Orders: ${kpis.pendingOrdersCount}):`, JSON.stringify(kpis).substring(0, 300) + "...");
-      return NextResponse.json({ data: kpis, source: 'aggregate' });
-
-    } else {
-      console.warn(`[Analytics Dashboard API] Aggregate document ${aggregateDocId} NOT FOUND. Calculating live KPIs for company ${companyId}.`);
-      console.time(`calculateLiveDashboardData-${companyId}`);
-
-      const inventorySnapshot = await db.collection('inventory')
-                                        .where('companyId', '==', companyId)
-                                        .where('deletedAt', '==', null)
-                                        .get();
-      console.log(`[Analytics Dashboard API] Live Inventory: Fetched ${inventorySnapshot.docs.length} inventory items for company ${companyId}.`);
-
-      let totalInventoryValue = 0;
-      let lowStockItemsCount = 0;
-      let outOfStockItemsCount = 0;
-      const inventoryValueByCategory: Record<string, number> = {};
-
-      inventorySnapshot.docs.forEach(doc => {
-        const item = doc.data() as InventoryStockDocument;
-        const quantity = typeof item.quantity === 'number' ? item.quantity : 0;
-        const unitCost = typeof item.unitCost === 'number' ? item.unitCost : 0;
-        const reorderPoint = typeof item.reorderPoint === 'number' ? item.reorderPoint : 0;
-        const category = typeof item.category === 'string' && item.category ? item.category : 'Uncategorized';
-        const itemValue = quantity * unitCost;
-
-        totalInventoryValue += itemValue;
-        if (reorderPoint > 0 && quantity <= reorderPoint) lowStockItemsCount++;
-        if (quantity <= 0) outOfStockItemsCount++;
-
-        inventoryValueByCategory[category] = (inventoryValueByCategory[category] || 0) + itemValue;
-      });
-      console.log(`[Analytics Dashboard API] Live Inventory CALC: TotalValue=${totalInventoryValue.toFixed(2)}, LowStock=${lowStockItemsCount}, OutOfStock=${outOfStockItemsCount}`);
-
-      const pendingStatuses: string[] = ['pending', 'pending_approval', 'processing', 'awaiting_shipment'];
-      const pendingOrdersSnapshot = await db.collection('orders')
-                                            .where('companyId', '==', companyId)
-                                            .where('type', '==', 'purchase')
-                                            .where('status', 'in', pendingStatuses)
-                                            .where('deletedAt', '==', null)
-                                            .count()
-                                            .get();
-      const pendingOrdersCount = pendingOrdersSnapshot.data().count;
-      console.log(`[Analytics Dashboard API] Live Pending Orders: Fetched ${pendingOrdersCount} pending purchase orders.`);
-
-      const todayStartForSales = new Date();
-      todayStartForSales.setHours(0, 0, 0, 0);
-      const tomorrowStartForSales = new Date(todayStartForSales);
-      tomorrowStartForSales.setDate(todayStartForSales.getDate() + 1);
-
-      const salesTodaySnapshot = await db.collection('sales_history')
-                                          .where('companyId', '==', companyId)
-                                          .where('date', '>=', admin.firestore.Timestamp.fromDate(todayStartForSales))
-                                          .where('date', '<', admin.firestore.Timestamp.fromDate(tomorrowStartForSales))
-                                          .where('deletedAt', '==', null)
-                                          .get();
-      let todaysRevenue = 0;
-      salesTodaySnapshot.docs.forEach(doc => {
-        const sale = doc.data() as SalesHistoryDocument;
-        todaysRevenue += typeof sale.revenue === 'number' ? sale.revenue : 0;
-      });
-      console.log(`[Analytics Dashboard API] Live Today's Revenue: Fetched ${salesTodaySnapshot.docs.length} sales records, Revenue: ${todaysRevenue.toFixed(2)}.`);
-      console.timeEnd(`calculateLiveDashboardData-${companyId}`);
-
-      const kpis = {
-        totalInventoryValue: parseFloat(totalInventoryValue.toFixed(2)),
-        lowStockItemsCount,
-        outOfStockItemsCount,
-        pendingOrdersCount,
-        todaysRevenue: parseFloat(todaysRevenue.toFixed(2)),
-        inventoryValueByCategory,
+        todaysRevenue: 0,
+        inventoryValueByCategory: {},
         lastUpdated: new Date().toISOString(),
+        turnoverRate: 0,
       };
-      console.log(`[Analytics Dashboard API] KPIs from LIVE CALCULATION:`, JSON.stringify(kpis).substring(0,300) + "...");
-      return NextResponse.json({ data: kpis, source: 'live_calculation' });
-    }
+    return NextResponse.json({ data: kpis, source: 'stubbed_data_due_to_firebase_admin_stub' });
+
   } catch (error: any) {
     console.error(`[Analytics Dashboard API] UNHANDLED EXCEPTION for company ${companyId}. Error: ${error.message}`, error.stack);
-    const errorMessage = `Internal server error during dashboard analytics: ${error.message || 'Unknown error'}`;
-    if (error.code === 'failed-precondition' || (error.message && (error.message.includes("requires an index") || error.message.includes("Query requires an index")))) {
-        console.error("[Analytics Dashboard API] Firestore missing index detected. Error message:", error.message);
-        return NextResponse.json({
-            error: 'A Firestore query failed due to a missing index. Please check server logs for a link to create the required index. This is a common issue that needs to be resolved in the Firebase console.',
-            details: error.message
-        }, { status: 500 });
-    }
+    const errorMessage = `Internal server error during dashboard analytics (stub mode): ${error.message || 'Unknown error'}`;
     return NextResponse.json({ error: errorMessage, details: error.stack ? error.stack.substring(0, 500) + "..." : "No stack trace available" }, { status: 500 });
   }
 }
