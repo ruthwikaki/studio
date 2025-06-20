@@ -1,10 +1,10 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { getDb, AdminTimestamp, isAdminInitialized, getInitializationError } from '@/lib/firebase/admin';
+import { getDb, isAdminInitialized, getInitializationError, admin } from '@/lib/firebase/admin';
 import { verifyAuthToken } from '@/lib/firebase/admin-auth';
 import type { InventoryStockDocument, OrderDocument, SalesHistoryDocument, DailyAggregateDocument } from '@/lib/types/firestore';
-import { admin } from '@/lib/firebase/admin'; // For admin.firestore.Timestamp
+
 
 export const revalidate = 300; // Revalidate every 5 minutes
 
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
   console.log("[Analytics Dashboard API] Request received at entry point.");
   
   if (!isAdminInitialized()) {
-    const initErrorMsg = getInitializationError(); // Get the specific error
+    const initErrorMsg = getInitializationError(); 
     const detailedErrorMessage = `Firebase Admin SDK not initialized. Reason: ${initErrorMsg || 'Unknown initialization error. Please check server startup logs from admin.ts, especially for messages about service-account-key.json.'}`;
     console.error(`[Analytics Dashboard API] AT ENTRY: ${detailedErrorMessage}`);
     return NextResponse.json({ error: `Server configuration error: ${detailedErrorMessage}` }, { status: 500 });
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
   if (!db) {
     const initErrorMsg = getInitializationError(); 
     const detailedErrorMessage = `Firestore instance (db) is null. Reason: ${initErrorMsg || 'This usually means Admin SDK initialization failed critically earlier. Check server startup logs.'}`;
-    console.error(`[Analytics Dashboard API] AFTER SDK INIT CHECK: ${detailedErrorMessage}`);
+    console.error(`[Analytics Dashboard API] AFTER SDK INIT CHECK BUT DB IS NULL: ${detailedErrorMessage}`);
     return NextResponse.json({ error: `Server configuration error: ${detailedErrorMessage}` }, { status: 500 });
   }
   
@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
         totalInventoryValue: typeof aggData.totalInventoryValue === 'number' ? aggData.totalInventoryValue : 0,
         lowStockItemsCount: typeof aggData.lowStockItemsCount === 'number' ? aggData.lowStockItemsCount : 0,
         outOfStockItemsCount: typeof aggData.outOfStockItemsCount === 'number' ? aggData.outOfStockItemsCount : 0,
-        pendingOrdersCount: 0, // Will be fetched live below
+        pendingOrdersCount: 0, 
         todaysRevenue: typeof aggData.todaysRevenue === 'number' ? aggData.todaysRevenue : 0,
         inventoryValueByCategory: aggData.inventoryValueByCategory || {},
         lastUpdated: (aggData.lastCalculated as admin.firestore.Timestamp)?.toDate()?.toISOString() || new Date().toISOString(),
