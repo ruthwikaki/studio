@@ -1,7 +1,7 @@
 
 // src/lib/firebase/admin-auth.ts
 import type { NextRequest } from 'next/server';
-import { authAdmin, db, AdminTimestamp } from './admin';
+import { getAuthAdmin, getDb, AdminTimestamp, isAdminInitialized } from './admin'; // Updated imports
 import type { UserDocument, UserRole, UserCacheDocument } from '@/lib/types/firestore';
 import { NextResponse } from 'next/server';
 
@@ -31,8 +31,14 @@ export interface VerifiedUser {
 
 async function fetchAndCacheUserData(uid: string): Promise<VerifiedUser | null> {
   console.log(`[Admin Auth] fetchAndCacheUserData: Attempting to fetch user data for UID: ${uid}`);
+  const firestoreDb = getDb(); // Use getter
+  if (!firestoreDb) {
+    console.error(`[Admin Auth] fetchAndCacheUserData: Firestore service is not available for UID: ${uid}. Admin SDK might not be initialized.`);
+    return null;
+  }
+
   try {
-    const userDocRef = db.collection('users').doc(uid);
+    const userDocRef = firestoreDb.collection('users').doc(uid);
     const userDocSnap = await userDocRef.get();
 
     if (!userDocSnap.exists) {
@@ -74,6 +80,11 @@ export async function verifyAuthToken(request: NextRequest): Promise<VerifiedUse
   const authHeader = request.headers.get('Authorization');
   const token = authHeader?.split('Bearer ')[1];
 
+  if (!isAdminInitialized()) {
+    console.error('[Admin Auth] verifyAuthToken: Firebase Admin SDK is not initialized. Cannot verify token or get mock user.');
+    throw new Error('Server configuration error: Firebase Admin SDK not initialized.');
+  }
+
   if (!token) {
     console.warn('[Admin Auth] verifyAuthToken: No token provided. Using mock user for development.');
     if (process.env.NODE_ENV === 'development') {
@@ -86,16 +97,21 @@ export async function verifyAuthToken(request: NextRequest): Promise<VerifiedUse
             console.log(`[Admin Auth] verifyAuthToken: Using mock user from DB: UID ${mockUserFromDb.uid}, Company ID ${mockUserFromDb.companyId}, Role: ${mockUserFromDb.role}`);
             return mockUserFromDb;
         }
-        // Fallback if mock user not in DB (e.g., pre-seed)
         console.warn(`[Admin Auth] verifyAuthToken: Mock user ${MOCK_USER_ID} not found in DB, using hardcoded mock details (Company ID: ${MOCK_COMPANY_ID}). Ensure seed script has run with this company ID.`);
         return { uid: MOCK_USER_ID, companyId: MOCK_COMPANY_ID, role: MOCK_ROLE, email: MOCK_EMAIL };
     }
     throw new Error('No authorization token provided.');
   }
 
+  const auth = getAuthAdmin(); // Use getter
+  if (!auth) {
+    console.error('[Admin Auth] verifyAuthToken: Firebase Admin Auth service is not available.');
+    throw new Error('Firebase Admin Auth service is not available. Check server logs.');
+  }
+
   try {
     console.log('[Admin Auth] verifyAuthToken: Received a token, attempting to verify with Firebase Admin SDK.');
-    const decodedToken = await authAdmin.verifyIdToken(token);
+    const decodedToken = await auth.verifyIdToken(token);
     console.log(`[Admin Auth] verifyAuthToken: Token successfully decoded for UID: ${decodedToken.uid}. Fetching user details...`);
     const verifiedUser = await getVerifiedUser(decodedToken.uid);
     if (!verifiedUser) {
@@ -115,6 +131,10 @@ export async function verifyAuthToken(request: NextRequest): Promise<VerifiedUse
 
 
 export async function verifyAuthTokenOnServerAction(): Promise<VerifiedUser> {
+  if (!isAdminInitialized()) {
+    console.error("[Admin Auth] verifyAuthTokenOnServerAction: Firebase Admin SDK not initialized. Cannot get mock user.");
+    throw new Error('Server configuration error: Firebase Admin SDK not initialized.');
+  }
   console.warn("[Admin Auth] verifyAuthTokenOnServerAction: Using MOCK user for development.");
   const mockUserFromDb = await getVerifiedUser(MOCK_USER_ID);
   if (mockUserFromDb) {
@@ -137,9 +157,7 @@ export function withAuth(handler: (request: NextRequest, context: { params: any 
       return await handler(request, context, user);
     } catch (error: any) {
       console.error(`[Admin Auth] withAuth: Authentication failed for request to ${request.nextUrl.pathname}. Error: ${error.message}`);
-      // Ensure a NextResponse is always returned
       const response = NextResponse.json({ error: error.message || 'Authentication failed' }, { status: 401 });
-      // Add CORS headers to error responses too
       response.headers.set('Access-Control-Allow-Origin', '*');
       response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
       response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -179,3 +197,4 @@ export function withRoleAuthorization(
     return handler(request, context, user);
   });
 }
+    

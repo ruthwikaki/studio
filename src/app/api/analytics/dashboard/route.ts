@@ -1,7 +1,7 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { db, AdminTimestamp } from '@/lib/firebase/admin';
+import { getDb, AdminTimestamp, isAdminInitialized } from '@/lib/firebase/admin';
 import { verifyAuthToken } from '@/lib/firebase/admin-auth';
 import type { InventoryStockDocument, OrderDocument, SalesHistoryDocument, DailyAggregateDocument } from '@/lib/types/firestore';
 
@@ -23,6 +23,18 @@ export async function GET(request: NextRequest) {
   let companyId: string;
   let userId: string;
 
+  if (!isAdminInitialized()) {
+    console.error("[Analytics Dashboard API] Firebase Admin SDK not initialized at entry.");
+    // This error indicates a problem with service-account-key.json or the admin.ts initialization itself.
+    return NextResponse.json({ error: "Server configuration error: Firebase Admin SDK not initialized. Check server logs for details on 'service-account-key.json'." }, { status: 500 });
+  }
+
+  const db = getDb(); // Call the getter function
+  if (!db) {
+    console.error("[Analytics Dashboard API] Firestore instance (db) is null after SDK initialization check. This is unexpected.");
+    return NextResponse.json({ error: "Server configuration error: Firestore instance is not available. Admin SDK might have failed post-check." }, { status: 500 });
+  }
+
   try {
     const authResult = await verifyAuthToken(request); // This now has more logging
     companyId = authResult.companyId;
@@ -30,7 +42,6 @@ export async function GET(request: NextRequest) {
     console.log(`[Analytics Dashboard API] Authenticated successfully. User ID: ${userId}, Company ID: ${companyId}`);
   } catch (authError: any) {
     console.error("[Analytics Dashboard API] AUTHENTICATION ERROR:", authError.message, authError.stack);
-    // Ensure a JSON response is sent even for early auth errors
     return NextResponse.json({ error: `Authentication failed: ${authError.message || 'Unknown auth error'}` }, { status: 401 });
   }
 
@@ -61,7 +72,7 @@ export async function GET(request: NextRequest) {
         pendingOrdersCount: 0, // Will be fetched live below
         todaysRevenue: typeof aggData.todaysRevenue === 'number' ? aggData.todaysRevenue : 0,
         inventoryValueByCategory: aggData.inventoryValueByCategory || {},
-        lastUpdated: (aggData.lastCalculated as AdminTimestamp)?.toDate()?.toISOString() || new Date().toISOString(),
+        lastUpdated: (aggData.lastCalculated as admin.firestore.Timestamp)?.toDate()?.toISOString() || new Date().toISOString(),
         turnoverRate: typeof aggData.turnoverRate === 'number' ? aggData.turnoverRate : undefined,
       };
 
