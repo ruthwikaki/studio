@@ -1,10 +1,2 @@
-import FileUploader from "@/components/data-import/FileUploader";
-
-export default function DataImportPage() {
-  return (
-    <div className="container mx-auto py-8">
-      <FileUploader />
-      {/* Future: Add section for import history or validation results */}
-    </div>
-  );
-}
+// This file is intentionally left empty to resolve a routing conflict with src/app/(auth)/data-import/page.tsx.
+// This file can be safely deleted.
