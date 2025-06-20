@@ -396,7 +396,7 @@ async function seedDatabase() {
     console.error("  1. Cloud Firestore API is enabled in Google Cloud Console for project:", sdkProjectId);
     console.error("  2. The service account has 'Cloud Datastore User' or 'Editor' role in IAM for project:", sdkProjectId);
     console.error("  3. The project has an active billing account linked.");
-    console.error("  4. The (default) database exists and is provisioned in a region for project "+sdkProjectId+" (check GCP Console > Firestore).");
+    console.error(`  4. The (default) database exists and is provisioned in a region for project ${sdkProjectId} (check GCP Console > Firestore).`);
     console.error("  Details from diagnostic error:", diagError.message);
     console.error("  Code:", diagError.code);
     process.exit(1);
@@ -542,5 +542,3 @@ seedDatabase().catch(error => {
   console.error("[Seed Script] Unhandled error during seeding:", error);
   process.exit(1);
 });
-
-

@@ -5,6 +5,7 @@ import * as path from 'path';
 
 // Construct an absolute path to 'service-account-key.json' in the project root
 const serviceAccountPath = path.join(process.cwd(), 'service-account-key.json');
+let adminApp: admin.app.App;
 
 try {
   if (!admin.apps.length) {
@@ -19,17 +20,19 @@ try {
         throw new Error("Service account key file is missing 'project_id'. Ensure it's the correct key from Firebase.");
     }
 
-    admin.initializeApp({
+    adminApp = admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
-      projectId: serviceAccount.project_id,
+      projectId: serviceAccount.project_id, // Ensure projectId is explicitly set
+      // No databaseURL needed if using (default) Firestore and not Realtime Database primarily here.
     });
-    console.log(`Firebase Admin SDK initialized in admin.ts for project: ${serviceAccount.project_id}, using key from project root. Targeting (default) Firestore database.`);
+    console.log(`Firebase Admin SDK initialized in admin.ts for project: ${serviceAccount.project_id}. Targeting (default) Firestore database.`);
   } else {
-    const currentApp = admin.app();
-    if (currentApp && currentApp.options && currentApp.options.projectId) {
-        console.log(`Firebase Admin SDK already initialized for project: ${currentApp.options.projectId}. Targeting (default) Firestore database.`);
+    adminApp = admin.app(); // Use the existing app
+    const currentAppProjectId = adminApp.options.projectId;
+    if (currentAppProjectId) {
+        console.log(`Firebase Admin SDK already initialized for project: ${currentAppProjectId}. Targeting (default) Firestore database.`);
     } else {
-        console.warn("Firebase Admin SDK was already initialized, but project ID could not be determined from the existing app instance. This might indicate an issue. Targeting (default) Firestore database.");
+        console.warn("Firebase Admin SDK was already initialized, but project ID could not be determined. Targeting (default) Firestore database.");
     }
   }
 } catch (error: any) {
@@ -50,14 +53,17 @@ try {
   }
   console.error("  ACTION: Please ensure your 'service-account-key.json' (downloaded from your Firebase project settings) is valid and placed in the project root directory.");
   console.error("--------------------------------------------------------------------");
+  // process.exit(1); // Consider re-throwing or exiting if critical for server startup
 }
 
-// Get Firestore instance for the (default) database
-export const db = admin.firestore();
+// Get Firestore instance for the (default) database.
+// This connects to the (default) database instance by default.
+export const db = adminApp!.firestore(); // Use adminApp to ensure it's from the initialized app.
 console.log(`[Admin SDK] Firestore instance configured for (default) database.`);
 
-export const authAdmin = admin.auth();
-export const storageAdmin = admin.storage();
+
+export const authAdmin = adminApp!.auth();
+export const storageAdmin = adminApp!.storage();
 export const FieldValue = admin.firestore.FieldValue;
 export const AdminTimestamp = admin.firestore.Timestamp;
 export type { Timestamp as AdminTimestampType } from 'firebase-admin/firestore';
