@@ -23,17 +23,29 @@ interface DashboardKPIs {
 const fetchDashboardKPIs = async (): Promise<{ data: DashboardKPIs, source: string }> => {
   const response = await fetch('/api/analytics/dashboard');
   if (!response.ok) {
-    let errorMsg = 'Failed to fetch dashboard KPIs';
+    let apiErrorPart = '';
+    let detailsPart = '';
     try {
       const errorData = await response.json();
-      errorMsg = errorData.error || errorData.message || errorMsg;
+      if (errorData.error) {
+        apiErrorPart = errorData.error;
+      } else if (errorData.message) {
+        apiErrorPart = errorData.message;
+      }
       if (errorData.details) {
-        errorMsg += ` Details: ${typeof errorData.details === 'string' ? errorData.details : JSON.stringify(errorData.details)}`;
+        detailsPart = `Details: ${typeof errorData.details === 'string' ? errorData.details : JSON.stringify(errorData.details)}`;
       }
     } catch (e) {
-      // Failed to parse error JSON, use default message
+      // Failed to parse error JSON
     }
-    throw new Error(errorMsg);
+    // Construct the final error message
+    let finalErrorMessage = 'Failed to fetch dashboard KPIs.'; // Default if no specific message from API
+    if (apiErrorPart) {
+      finalErrorMessage = `${apiErrorPart}${detailsPart ? ' ' + detailsPart : ''}`;
+    } else if (detailsPart) { 
+      finalErrorMessage += ` ${detailsPart}`;
+    }
+    throw new Error(finalErrorMessage);
   }
   return response.json();
 };
