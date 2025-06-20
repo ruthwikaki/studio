@@ -19,44 +19,52 @@ interface DashboardKPIs {
 }
 
 export async function GET(request: NextRequest) {
+  console.log("[Analytics Dashboard API] Request received at entry point.");
   let companyId: string;
-  let userId: string; 
+  let userId: string;
+
   try {
-    const authResult = await verifyAuthToken(request);
+    const authResult = await verifyAuthToken(request); // This now has more logging
     companyId = authResult.companyId;
     userId = authResult.uid;
-    console.log(`[Analytics Dashboard API] Authenticated user ${userId} for company ${companyId}`);
+    console.log(`[Analytics Dashboard API] Authenticated successfully. User ID: ${userId}, Company ID: ${companyId}`);
   } catch (authError: any) {
-    console.error("[Analytics Dashboard API] Authentication error:", authError.message);
-    return NextResponse.json({ error: authError.message || 'Authentication failed' }, { status: 401 });
+    console.error("[Analytics Dashboard API] AUTHENTICATION ERROR:", authError.message, authError.stack);
+    // Ensure a JSON response is sent even for early auth errors
+    return NextResponse.json({ error: `Authentication failed: ${authError.message || 'Unknown auth error'}` }, { status: 401 });
   }
 
-  console.log(`[Analytics Dashboard API] Processing request for companyId: ${companyId}`);
+  if (!companyId) {
+    console.error("[Analytics Dashboard API] CRITICAL: Company ID is undefined after successful-looking authentication. This should not happen.");
+    return NextResponse.json({ error: "Company ID missing after authentication." }, { status: 500 });
+  }
+  console.log(`[Analytics Dashboard API] Processing dashboard request for companyId: ${companyId}`);
 
   try {
     const todayForAggId = new Date();
-    todayForAggId.setUTCHours(0,0,0,0); 
-    const todayStr = todayForAggId.toISOString().split('T')[0]; 
+    todayForAggId.setUTCHours(0,0,0,0);
+    const todayStr = todayForAggId.toISOString().split('T')[0];
     const aggregateDocId = `${companyId}_${todayStr}`;
     const aggregateDocRef = db.collection('daily_aggregates').doc(aggregateDocId);
-    
-    console.log(`[Analytics Dashboard API] Attempting to fetch aggregate: ${aggregateDocId}`);
+
+    console.log(`[Analytics Dashboard API] Attempting to fetch aggregate document: ${aggregateDocId}`);
     const aggregateDocSnap = await aggregateDocRef.get();
 
     if (aggregateDocSnap.exists) {
-      console.log(`[Analytics Dashboard API] Aggregate document ${aggregateDocId} found.`);
       const aggData = aggregateDocSnap.data() as DailyAggregateDocument;
+      console.log(`[Analytics Dashboard API] Aggregate document ${aggregateDocId} FOUND. Data (first 500 chars):`, JSON.stringify(aggData).substring(0, 500) + "...");
+
       const kpis: DashboardKPIs = {
-        totalInventoryValue: aggData.totalInventoryValue || 0,
-        lowStockItemsCount: aggData.lowStockItemsCount || 0,
-        outOfStockItemsCount: aggData.outOfStockItemsCount || 0,
-        pendingOrdersCount: 0, 
-        todaysRevenue: aggData.todaysRevenue || 0,
+        totalInventoryValue: typeof aggData.totalInventoryValue === 'number' ? aggData.totalInventoryValue : 0,
+        lowStockItemsCount: typeof aggData.lowStockItemsCount === 'number' ? aggData.lowStockItemsCount : 0,
+        outOfStockItemsCount: typeof aggData.outOfStockItemsCount === 'number' ? aggData.outOfStockItemsCount : 0,
+        pendingOrdersCount: 0, // Will be fetched live below
+        todaysRevenue: typeof aggData.todaysRevenue === 'number' ? aggData.todaysRevenue : 0,
         inventoryValueByCategory: aggData.inventoryValueByCategory || {},
         lastUpdated: (aggData.lastCalculated as AdminTimestamp)?.toDate()?.toISOString() || new Date().toISOString(),
-        turnoverRate: aggData.turnoverRate,
+        turnoverRate: typeof aggData.turnoverRate === 'number' ? aggData.turnoverRate : undefined,
       };
-      
+
       const pendingOrdersSnapshot = await db.collection('orders')
                                           .where('companyId', '==', companyId)
                                           .where('type', '==', 'purchase')
@@ -65,18 +73,19 @@ export async function GET(request: NextRequest) {
                                           .count()
                                           .get();
       kpis.pendingOrdersCount = pendingOrdersSnapshot.data().count;
-      console.log(`[Analytics Dashboard API] KPIs from aggregate (pending orders: ${kpis.pendingOrdersCount}):`, JSON.stringify(kpis));
+      console.log(`[Analytics Dashboard API] KPIs from AGGREGATE (Pending Orders: ${kpis.pendingOrdersCount}):`, JSON.stringify(kpis));
       return NextResponse.json({ data: kpis, source: 'aggregate' });
+
     } else {
       console.warn(`[Analytics Dashboard API] Aggregate document ${aggregateDocId} NOT FOUND. Calculating live KPIs for company ${companyId}.`);
-      
       console.time(`calculateLiveDashboardData-${companyId}`);
+
       const inventorySnapshot = await db.collection('inventory')
                                         .where('companyId', '==', companyId)
-                                        .where('deletedAt', '==', null) 
+                                        .where('deletedAt', '==', null)
                                         .get();
-      console.log(`[Analytics Dashboard API] Live: Fetched ${inventorySnapshot.docs.length} inventory items for company ${companyId}.`);
-      
+      console.log(`[Analytics Dashboard API] Live Inventory: Fetched ${inventorySnapshot.docs.length} inventory items for company ${companyId}.`);
+
       let totalInventoryValue = 0;
       let lowStockItemsCount = 0;
       let outOfStockItemsCount = 0;
@@ -93,10 +102,10 @@ export async function GET(request: NextRequest) {
         totalInventoryValue += itemValue;
         if (reorderPoint > 0 && quantity <= reorderPoint) lowStockItemsCount++;
         if (quantity <= 0) outOfStockItemsCount++;
-        
+
         inventoryValueByCategory[category] = (inventoryValueByCategory[category] || 0) + itemValue;
       });
-      console.log(`[Analytics Dashboard API] Live Inventory Calc: TotalValue=${totalInventoryValue}, LowStock=${lowStockItemsCount}, OutOfStock=${outOfStockItemsCount}`);
+      console.log(`[Analytics Dashboard API] Live Inventory CALC: TotalValue=${totalInventoryValue.toFixed(2)}, LowStock=${lowStockItemsCount}, OutOfStock=${outOfStockItemsCount}`);
 
       const pendingStatuses: string[] = ['pending', 'pending_approval', 'processing', 'awaiting_shipment'];
       const pendingOrdersSnapshot = await db.collection('orders')
@@ -107,9 +116,9 @@ export async function GET(request: NextRequest) {
                                             .count()
                                             .get();
       const pendingOrdersCount = pendingOrdersSnapshot.data().count;
-      console.log(`[Analytics Dashboard API] Live: Fetched ${pendingOrdersCount} pending purchase orders.`);
+      console.log(`[Analytics Dashboard API] Live Pending Orders: Fetched ${pendingOrdersCount} pending purchase orders.`);
 
-      const todayStartForSales = new Date(); 
+      const todayStartForSales = new Date();
       todayStartForSales.setHours(0, 0, 0, 0);
       const tomorrowStartForSales = new Date(todayStartForSales);
       tomorrowStartForSales.setDate(todayStartForSales.getDate() + 1);
@@ -125,30 +134,32 @@ export async function GET(request: NextRequest) {
         const sale = doc.data() as SalesHistoryDocument;
         todaysRevenue += typeof sale.revenue === 'number' ? sale.revenue : 0;
       });
-      console.log(`[Analytics Dashboard API] Live: Fetched ${salesTodaySnapshot.docs.length} sales records for today, Revenue: ${todaysRevenue}.`);
+      console.log(`[Analytics Dashboard API] Live Today's Revenue: Fetched ${salesTodaySnapshot.docs.length} sales records, Revenue: ${todaysRevenue.toFixed(2)}.`);
       console.timeEnd(`calculateLiveDashboardData-${companyId}`);
 
       const kpis: DashboardKPIs = {
-        totalInventoryValue,
+        totalInventoryValue: parseFloat(totalInventoryValue.toFixed(2)),
         lowStockItemsCount,
         outOfStockItemsCount,
         pendingOrdersCount,
-        todaysRevenue,
+        todaysRevenue: parseFloat(todaysRevenue.toFixed(2)),
         inventoryValueByCategory,
         lastUpdated: new Date().toISOString(),
       };
-      console.log(`[Analytics Dashboard API] KPIs from live calculation:`, JSON.stringify(kpis));
+      console.log(`[Analytics Dashboard API] KPIs from LIVE CALCULATION:`, JSON.stringify(kpis));
       return NextResponse.json({ data: kpis, source: 'live_calculation' });
     }
   } catch (error: any) {
-    console.error(`[Analytics Dashboard API] UNHANDLED EXCEPTION for company ${companyId}:`, error);
-    const errorMessage = `Internal server error processing dashboard analytics: ${error.message || 'Unknown error'}`;
-    if (error.code === 'failed-precondition') {
-        return NextResponse.json({ 
-            error: 'A Firestore query failed, possibly due to a missing index. Please check server logs for a link to create the index.',
-            details: error.message 
+    console.error(`[Analytics Dashboard API] UNHANDLED EXCEPTION for company ${companyId}. Error: ${error.message}`, error.stack);
+    const errorMessage = `Internal server error during dashboard analytics: ${error.message || 'Unknown error'}`;
+    if (error.code === 'failed-precondition' || (error.message && (error.message.includes("requires an index") || error.message.includes("Query requires an index")))) {
+        console.error("[Analytics Dashboard API] Firestore missing index detected. Error message:", error.message);
+        // The error message from Firestore usually contains the link to create the index.
+        return NextResponse.json({
+            error: 'A Firestore query failed due to a missing index. Please check server logs for a link to create the required index. This is a common issue that needs to be resolved in the Firebase console.',
+            details: error.message
         }, { status: 500 });
     }
-    return NextResponse.json({ error: errorMessage, details: error.stack }, { status: 500 });
+    return NextResponse.json({ error: errorMessage, details: error.stack ? error.stack.substring(0, 500) + "..." : "No stack trace available" }, { status: 500 });
   }
 }
