@@ -87,3 +87,31 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer utilities {
+  .animated-gradient-background {
+    @apply absolute inset-0 -z-10;
+    background: linear-gradient(-45deg, #0d1117, #1f2c3d, #1c3d52, #2a7f9b);
+    background-size: 400% 400%;
+    animation: gradient 15s ease infinite;
+  }
+
+  .bg-grid-pattern {
+    background-image:
+      linear-gradient(to right, rgba(255, 255, 255, 0.1) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  @keyframes gradient {
+    0% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+    100% {
+      background-position: 0% 50%;
+    }
+  }
+}

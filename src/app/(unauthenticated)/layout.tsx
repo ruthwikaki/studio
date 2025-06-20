@@ -5,7 +5,7 @@ export default function UnauthenticatedLayout({
   children: React.ReactNode;
 }) {
   return (
-    <main className="flex h-screen w-full items-center justify-center bg-blue-500/5 p-4">
+    <main className="relative min-h-screen w-full">
       {children}
     </main>
   );
