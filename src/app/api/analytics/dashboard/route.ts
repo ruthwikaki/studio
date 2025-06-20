@@ -5,7 +5,6 @@ import { getDb, isAdminInitialized, getInitializationError, admin } from '@/lib/
 import { verifyAuthToken } from '@/lib/firebase/admin-auth';
 import type { InventoryStockDocument, OrderDocument, SalesHistoryDocument, DailyAggregateDocument } from '@/lib/types/firestore';
 
-
 export const revalidate = 300; // Revalidate every 5 minutes
 
 interface DashboardKPIs {
@@ -31,6 +30,7 @@ export async function GET(request: NextRequest) {
 
   const db = getDb();
   if (!db) {
+    // This case should ideally be caught by isAdminInitialized if initErrorMsg is set properly.
     const initErrorMsg = getInitializationError(); 
     const detailedErrorMessage = `Firestore instance (db) is null. Reason: ${initErrorMsg || 'This usually means Admin SDK initialization failed critically earlier. Check server startup logs.'}`;
     console.error(`[Analytics Dashboard API] AFTER SDK INIT CHECK BUT DB IS NULL: ${detailedErrorMessage}`);
