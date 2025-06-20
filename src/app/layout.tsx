@@ -15,7 +15,7 @@ export default function RootLayout({
   console.log('[RootLayout] Rendering layout...');
   return (
     <html lang="en">
-      <body>
+      <body suppressHydrationWarning={true}>
         <main>{children}</main>
       </body>
     </html>
