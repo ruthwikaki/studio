@@ -4,14 +4,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 // Construct an absolute path to 'service-account-key.json' in the project root
-// process.cwd() usually points to the project root in a Next.js environment
 const serviceAccountPath = path.join(process.cwd(), 'service-account-key.json');
+const TARGET_DATABASE_ID = 'ariadb'; // Specify your target database ID
 
 try {
   if (!admin.apps.length) {
     console.log(`[Admin SDK] Attempting to load service account key from: ${serviceAccountPath}`);
     if (!fs.existsSync(serviceAccountPath)) {
-      // This error will be caught by the outer catch block and logged.
       throw new Error(`Service account key file not found at resolved path: ${serviceAccountPath}. Ensure 'service-account-key.json' is in the project root.`);
     }
     const serviceAccountFileContent = fs.readFileSync(serviceAccountPath, 'utf8');
@@ -23,7 +22,8 @@ try {
 
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
-      projectId: serviceAccount.project_id, // Explicitly set projectId
+      projectId: serviceAccount.project_id,
+      // databaseId: TARGET_DATABASE_ID // This is NOT for specifying Firestore database ID
     });
     console.log(`Firebase Admin SDK initialized in admin.ts for project: ${serviceAccount.project_id}, using key from project root.`);
   } else {
@@ -52,12 +52,12 @@ try {
   }
   console.error("  ACTION: Please ensure your 'service-account-key.json' (downloaded from your Firebase project settings) is valid and placed in the project root directory.");
   console.error("--------------------------------------------------------------------");
-  // It's important that the application can still run even if admin SDK fails,
-  // so other parts (like client-side Firebase) might work.
-  // API routes relying on admin SDK will fail, which is expected.
 }
 
-export const db = admin.firestore();
+// Get Firestore instance for the specified database ID
+export const db = admin.firestore(admin.apps[0], TARGET_DATABASE_ID); // Pass app instance and database ID
+console.log(`[Admin SDK] Firestore instance configured for database: ${TARGET_DATABASE_ID}`);
+
 export const authAdmin = admin.auth();
 export const storageAdmin = admin.storage();
 export const FieldValue = admin.firestore.FieldValue;

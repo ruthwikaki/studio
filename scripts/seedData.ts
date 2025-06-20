@@ -11,9 +11,16 @@ import type {
 
 // --- Project ID Check (for logging purposes only, using the imported admin object) ---
 let sdkProjectId: string | undefined;
+let firestoreDbId: string | undefined;
+
 if (admin.apps.length > 0 && admin.app().options && admin.app().options.projectId) {
     sdkProjectId = admin.app().options.projectId;
-    console.log(`[Seed Script] Firebase Admin SDK appears to be initialized by admin.ts. Project ID from SDK: ${sdkProjectId}`);
+    // Attempt to get the databaseId from the db instance.
+    // Note: The Firebase Admin SDK's Firestore client doesn't directly expose a `databaseId` property easily.
+    // We know it's 'ariadb' because we set it in admin.ts
+    firestoreDbId = (db as any)._settings?.databaseId || 'ariadb'; // Accessing private property for logging if needed, or hardcode known ID.
+                                                                // Or, better, if your admin.ts exports the TARGET_DATABASE_ID, use that.
+    console.log(`[Seed Script] Firebase Admin SDK appears to be initialized by admin.ts. Project ID from SDK: ${sdkProjectId}, Target Database ID: ${firestoreDbId}`);
     
     const expectedProjectId = "aria-jknbu"; // Define your expected project ID
     if (sdkProjectId !== expectedProjectId) {
@@ -372,36 +379,37 @@ const mockDailyAggregate: Omit<DailyAggregateDocument, 'id' | 'date' | 'lastCalc
 
 
 async function seedDatabase() {
-  console.log(`[Seed Script] Using Project ID for Firestore operations: ${sdkProjectId}`);
-  if (!sdkProjectId) {
-    console.error("[Seed Script] CRITICAL: Project ID is undefined. Cannot proceed with Firestore operations.");
+  console.log(`[Seed Script] Using Project ID for Firestore operations: ${sdkProjectId}, Target Database ID: ${firestoreDbId}`);
+  if (!sdkProjectId || !firestoreDbId) {
+    console.error("[Seed Script] CRITICAL: Project ID or Target Database ID is undefined. Cannot proceed with Firestore operations.");
     process.exit(1);
   }
 
   try {
     // Diagnostic: Attempt a single simple write
-    console.log(`[Seed Script] Attempting a diagnostic write to project ${sdkProjectId}...`);
-    // Using .set() on a specific document path for more direct diagnostic
-    const diagnosticDocRef = db.collection('_seed_diagnostics').doc(`test_write_project_${sdkProjectId}_${Date.now()}`);
+    console.log(`[Seed Script] Attempting a diagnostic write to project ${sdkProjectId}, database ${firestoreDbId}...`);
+    const diagnosticDocRef = db.collection('_seed_diagnostics').doc(`test_write_project_${sdkProjectId}_db_${firestoreDbId}_${Date.now()}`);
     await diagnosticDocRef.set({ 
         timestamp: FieldValue.serverTimestamp(), 
-        message: `Seed script diagnostic write for project ${sdkProjectId}`,
-        sdkInitializedProjectId: sdkProjectId 
+        message: `Seed script diagnostic write for project ${sdkProjectId} to database ${firestoreDbId}`,
+        sdkInitializedProjectId: sdkProjectId,
+        targetDatabaseId: firestoreDbId,
     });
-    console.log(`[Seed Script] Diagnostic write SUCCESSFUL to collection '_seed_diagnostics'.`);
+    console.log(`[Seed Script] Diagnostic write SUCCESSFUL to collection '_seed_diagnostics' in database ${firestoreDbId}.`);
   } catch (diagError: any) {
-    console.error(`[Seed Script] CRITICAL ERROR during diagnostic write:`, diagError);
-    console.error("  This means basic Firestore write operations are failing.");
+    console.error(`[Seed Script] CRITICAL ERROR during diagnostic write to database ${firestoreDbId}:`, diagError);
+    console.error("  This means basic Firestore write operations are failing for the target database.");
     console.error("  Please re-verify:");
     console.error("  1. Cloud Firestore API is enabled in Google Cloud Console for project:", sdkProjectId);
     console.error("  2. The service account has 'Cloud Datastore User' or 'Editor' role in IAM for project:", sdkProjectId);
     console.error("  3. The project has an active billing account linked.");
+    console.error("  4. The database ID '"+firestoreDbId+"' exists and is provisioned in a region for project "+sdkProjectId+".");
     console.error("  Details from diagnostic error:", diagError.message);
     console.error("  Code:", diagError.code);
     process.exit(1);
   }
 
-  console.log("Connecting to Firestore...");
+  console.log(`Connecting to Firestore database: ${firestoreDbId}...`);
   const batch = db.batch();
 
   console.log("Seeding data to Firestore collections:");
@@ -521,16 +529,15 @@ async function seedDatabase() {
 
   try {
     await batch.commit();
-    console.log("[Seed Script] Batch commit successful. Database seeded.");
+    console.log(`[Seed Script] Batch commit successful. Database ${firestoreDbId} seeded.`);
   } catch (error: any) {
-    console.error("[Seed Script] Error committing batch:", error);
+    console.error(`[Seed Script] Error committing batch to database ${firestoreDbId}:`, error);
     console.error("--------------------------------------------------------------------");
     const currentProjectIdForErrorLog = sdkProjectId || 'UNKNOWN (SDK Project ID not readable during init check)';
-    console.error(`  TROUBLESHOOTING: If you see 'NOT_FOUND' or permission errors for project '${currentProjectIdForErrorLog}':`);
-    console.error(`  1. Ensure your Firebase project '${currentProjectIdForErrorLog}' has Firestore enabled.`);
-    console.error("     Go to Firebase Console -> Firestore Database -> Create database (if not already done).");
-    console.error("  2. Select a region for your Firestore database (this is a one-time setup).");
-    console.error("  3. Ensure the service account key being used ('service-account-key.json' in project root) has appropriate permissions (e.g., 'Owner' or 'Firebase Admin' or 'Cloud Datastore User') for the project it belongs to.");
+    console.error(`  TROUBLESHOOTING: If you see 'NOT_FOUND' or permission errors for project '${currentProjectIdForErrorLog}' and database '${firestoreDbId}':`);
+    console.error(`  1. Ensure your Firebase project '${currentProjectIdForErrorLog}' has Firestore enabled and the database '${firestoreDbId}' exists and is in a provisioned region.`);
+    console.error("     Go to Firebase Console -> Firestore Database. Verify the database ID and its region.");
+    console.error("  2. Ensure the service account key being used ('service-account-key.json' in project root) has appropriate permissions (e.g., 'Owner' or 'Firebase Admin' or 'Cloud Datastore User') for the project it belongs to.");
     console.error("  Details from error:", error.message);
     console.error("  Code:", error.code);
     console.error("--------------------------------------------------------------------");
