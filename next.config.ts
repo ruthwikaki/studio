@@ -20,6 +20,10 @@ const nextConfig: NextConfig = {
     // Crucial for preventing "path module not found" or similar errors with firebase-admin.
     serverComponentsExternalPackages: ['firebase-admin'],
   },
+  webpack: (config) => {
+    config.experiments = { ...config.experiments, asyncWebAssembly: true };
+    return config;
+  },
 };
 
 export default nextConfig;
