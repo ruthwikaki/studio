@@ -1,10 +1,24 @@
 
 import type { Metadata } from 'next';
-import './globals.css'; // Basic CSS
+import './globals.css';
+import { Toaster } from '@/components/ui/toaster';
+import QueryProvider from '@/components/providers/QueryProvider';
+import { AuthProvider } from '@/context/AuthContext';
+import { Inter, Space_Grotesk } from 'next/font/google';
+
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-inter',
+});
+
+const spaceGrotesk = Space_Grotesk({
+  subsets: ['latin'],
+  variable: '--font-space-grotesk',
+});
 
 export const metadata: Metadata = {
-  title: 'ARIA - Minimal Test',
-  description: 'Minimal Next.js app for testing API routes.',
+  title: 'ARIA - SupplyChainAI',
+  description: 'AI-powered supply chain management features.',
 };
 
 export default function RootLayout({
@@ -12,11 +26,15 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  console.log('[RootLayout] Rendering layout...');
   return (
-    <html lang="en">
-      <body suppressHydrationWarning={true}>
-        <main>{children}</main>
+    <html lang="en" suppressHydrationWarning>
+      <body className={`${inter.variable} ${spaceGrotesk.variable}`}>
+        <QueryProvider>
+          <AuthProvider>
+            {children}
+            <Toaster />
+          </AuthProvider>
+        </QueryProvider>
       </body>
     </html>
   );

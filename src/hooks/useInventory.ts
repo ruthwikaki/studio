@@ -5,6 +5,7 @@ import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-q
 import type { InventoryStockDocument } from '@/lib/types/firestore';
 import { useToast } from './use-toast';
 import { z } from 'zod';
+import { useAuth } from './useAuth';
 
 export const INVENTORY_QUERY_KEY = 'inventoryItems';
 
@@ -15,10 +16,10 @@ export const CreateInventoryItemSchema = z.object({
   quantity: z.coerce.number().int().min(0, "Quantity must be non-negative"),
   unitCost: z.coerce.number().min(0, "Unit cost must be non-negative"),
   reorderPoint: z.coerce.number().int().min(0, "Reorder point must be non-negative"),
-  category: z.string().optional().nullable().transform(val => val?.trim() || null),
-  description: z.string().optional().nullable().transform(val => val?.trim() || null),
+  category: z.string().optional().nullable().transform(val => val?.trim() || undefined),
+  description: z.string().optional().nullable().transform(val => val?.trim() || undefined),
   reorderQuantity: z.coerce.number().int().min(0).optional().nullable(),
-  location: z.string().optional().nullable().transform(val => val?.trim() || null),
+  location: z.string().optional().nullable().transform(val => val?.trim() || undefined),
   imageUrl: z.string().url({ message: "Invalid URL format" }).optional().nullable().or(z.literal('')),
 });
 export type CreateInventoryItemInput = z.infer<typeof CreateInventoryItemSchema>;
@@ -28,7 +29,7 @@ export type UpdateInventoryItemInput = z.infer<typeof UpdateInventoryItemSchema>
 
 
 interface PaginatedInventoryResponse {
-  data: InventoryStockDocument[]; // Should be Partial<InventoryStockDocument>[] if fieldsParam is used
+  data: InventoryStockDocument[];
   pagination: {
     count: number;
     nextCursor: string | null;
@@ -41,15 +42,19 @@ interface FetchInventoryParams {
   searchTerm?: string;
   category?: string;
   lowStockOnly?: boolean;
+  token: string | null;
 }
 
 const fetchInventoryItems = async ({
   pageParam,
-  limit = 8, // Default to 8 per page
+  limit = 8,
   searchTerm,
   category,
   lowStockOnly,
+  token,
 }: FetchInventoryParams): Promise<PaginatedInventoryResponse> => {
+  if (!token) throw new Error("Authentication token is required.");
+
   const params = new URLSearchParams();
   params.append('limit', String(limit));
   if (pageParam) params.append('startAfter', pageParam);
@@ -57,33 +62,46 @@ const fetchInventoryItems = async ({
   if (category && category !== 'all') params.append('category', category);
   if (lowStockOnly) params.append('lowStockOnly', 'true');
   
-  const response = await fetch(`/api/inventory?${params.toString()}`);
+  const response = await fetch(`/api/inventory?${params.toString()}`, {
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  });
+
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ error: 'Failed to fetch inventory', details: 'Server returned non-JSON error' }));
-    throw new Error(errorData.error || 'Failed to fetch inventory. ' + (errorData.details || ''));
+    const errorData = await response.json().catch(() => ({ error: 'Failed to fetch inventory' }));
+    throw new Error(errorData.error || 'Failed to fetch inventory');
   }
   return response.json();
 };
 
 export function useInventory(filters?: { searchTerm?: string; category?: string; lowStockOnly?: boolean }) {
+  const { token } = useAuth();
+  
   return useInfiniteQuery<
     PaginatedInventoryResponse,
     Error,
-    PaginatedInventoryResponse, // type of data in resolver
-    any, // queryKey type
-    string | undefined // pageParam type
+    PaginatedInventoryResponse,
+    any,
+    string | undefined
   >({
     queryKey: [INVENTORY_QUERY_KEY, { filters }],
-    queryFn: ({ pageParam }) => fetchInventoryItems({ ...filters, pageParam }),
+    queryFn: ({ pageParam }) => fetchInventoryItems({ ...filters, pageParam, token }),
     getNextPageParam: (lastPage) => lastPage.pagination.nextCursor,
     initialPageParam: undefined,
+    enabled: !!token, // Only run query if token exists
   });
 }
 
-const createInventoryItem = async (itemData: CreateInventoryItemInput): Promise<InventoryStockDocument> => {
+const createInventoryItem = async (itemData: CreateInventoryItemInput, token: string | null): Promise<InventoryStockDocument> => {
+  if (!token) throw new Error("Authentication token is required.");
+
   const response = await fetch('/api/inventory', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
     body: JSON.stringify(itemData),
   });
   if (!response.ok) {
@@ -97,9 +115,10 @@ const createInventoryItem = async (itemData: CreateInventoryItemInput): Promise<
 export function useCreateInventoryItem() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { token } = useAuth();
 
   return useMutation<InventoryStockDocument, Error, CreateInventoryItemInput>({
-    mutationFn: createInventoryItem,
+    mutationFn: (newItem) => createInventoryItem(newItem, token),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [INVENTORY_QUERY_KEY] });
       toast({ title: 'Success', description: `Item ${data.name} created successfully.` });
@@ -111,11 +130,16 @@ export function useCreateInventoryItem() {
 }
 
 
-const updateInventoryItem = async (itemData: { sku: string; data: UpdateInventoryItemInput }): Promise<InventoryStockDocument> => {
+const updateInventoryItem = async (itemData: { sku: string; data: UpdateInventoryItemInput }, token: string | null): Promise<InventoryStockDocument> => {
+  if (!token) throw new Error("Authentication token is required.");
+
   const { sku, data } = itemData;
   const response = await fetch(`/api/inventory/${sku}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
     body: JSON.stringify(data),
   });
   if (!response.ok) {
@@ -129,12 +153,12 @@ const updateInventoryItem = async (itemData: { sku: string; data: UpdateInventor
 export function useUpdateInventoryItem() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { token } = useAuth();
 
   return useMutation<InventoryStockDocument, Error, { sku: string; data: UpdateInventoryItemInput }>({
-    mutationFn: updateInventoryItem,
+    mutationFn: (updateData) => updateInventoryItem(updateData, token),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [INVENTORY_QUERY_KEY] });
-      // Also invalidate specific item query if you have one for detail views
       queryClient.invalidateQueries({ queryKey: [INVENTORY_QUERY_KEY, data.id] });
       toast({ title: 'Success', description: `Item ${data.name || data.id} updated successfully.` });
     },
@@ -145,9 +169,14 @@ export function useUpdateInventoryItem() {
 }
 
 
-const uploadInventoryFile = async (formData: FormData): Promise<any> => {
+const uploadInventoryFile = async (formData: FormData, token: string | null): Promise<any> => {
+  if (!token) throw new Error("Authentication token is required.");
+
   const response = await fetch('/api/inventory/upload', {
     method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`
+    },
     body: formData,
   });
   if (!response.ok) {
@@ -160,13 +189,13 @@ const uploadInventoryFile = async (formData: FormData): Promise<any> => {
 export function useUploadInventoryFile() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { token } = useAuth();
 
   return useMutation<any, Error, FormData>({
-    mutationFn: uploadInventoryFile,
+    mutationFn: (formData) => uploadInventoryFile(formData, token),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [INVENTORY_QUERY_KEY] });
       toast({ title: 'Upload Successful', description: data.message || 'Inventory uploaded and analyzed.' });
-      // Potentially return AI insights for display: data.aiInsights
     },
     onError: (error) => {
       toast({ title: 'Upload Error', description: error.message, variant: 'destructive' });

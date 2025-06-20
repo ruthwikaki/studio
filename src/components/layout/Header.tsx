@@ -5,9 +5,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { APP_NAME, NOTIFICATION_ICON as NotificationIcon, GLOBAL_SEARCH_ICON as SearchIcon, NAV_ITEMS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { Menu, LogOut, UserCircle, Settings as SettingsIcon } from "lucide-react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,12 +17,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 
 
 export default function Header() {
   const pathname = usePathname();
+  const router = useRouter();
   const { toggleSidebar, isMobile } = useSidebar();
   const { toast } = useToast();
+  const { user, logout } = useAuth();
 
   const getCurrentPageLabel = () => {
     let currentLabel = "Dashboard"; 
@@ -99,24 +101,20 @@ export default function Header() {
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="relative h-8 w-8 rounded-full">
               <Avatar className="h-8 w-8">
-                <AvatarImage src="https://placehold.co/40x40.png" alt="User Avatar" data-ai-hint="person portrait" />
-                <AvatarFallback>U</AvatarFallback>
+                <AvatarImage src={user?.photoURL || undefined} alt={user?.displayName || 'User Avatar'} data-ai-hint="person portrait" />
+                <AvatarFallback>{user?.email?.[0].toUpperCase() || 'U'}</AvatarFallback>
               </Avatar>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>My Account</DropdownMenuLabel>
+            <DropdownMenuLabel>{user?.displayName || user?.email}</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
-              <UserCircle className="mr-2 h-4 w-4" />
-              <span>Profile</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => toast({ title: "Settings Clicked", description: "Navigating to settings..."})}>
+            <DropdownMenuItem onClick={() => router.push('/settings')}>
               <SettingsIcon className="mr-2 h-4 w-4" />
               <span>Settings</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={logout}>
               <LogOut className="mr-2 h-4 w-4" />
               <span>Log out</span>
             </DropdownMenuItem>

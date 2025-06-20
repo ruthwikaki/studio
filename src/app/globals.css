@@ -3,35 +3,87 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  font-family: Inter, sans-serif;
-  padding: 20px;
-  background-color: #f0f2f5; /* Light gray background */
-  color: #1a202c; /* Darker text */
-  line-height: 1.6;
+@layer base {
+  :root {
+    --background: 200 20% 98%;
+    --foreground: 200 10% 10%;
+
+    --card: 200 20% 98%;
+    --card-foreground: 200 10% 10%;
+ 
+    --popover: 200 20% 98%;
+    --popover-foreground: 200 10% 10%;
+ 
+    --primary: 208.8 83.3% 53.1%; /* #3498DB */
+    --primary-foreground: 210 20% 98%;
+ 
+    --secondary: 200 10% 92%;
+    --secondary-foreground: 200 10% 10%;
+ 
+    --muted: 200 10% 92%;
+    --muted-foreground: 200 7% 40%;
+ 
+    --accent: 268.4 67.3% 60.2%; /* #9B59B6 */
+    --accent-foreground: 210 20% 98%;
+ 
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 20% 98%;
+
+    --success: 142.1 76.2% 36.3%; /* #27AE60 */
+    --success-foreground: 210 20% 98%;
+
+    --warning: 38.9 92.3% 50%; /* #F39C12 */
+    --warning-foreground: 210 20% 98%;
+
+    --border: 200 10% 85%;
+    --input: 200 10% 80%;
+    --ring: 208.8 83.3% 53.1%;
+ 
+    --radius: 0.5rem;
+  }
+ 
+  .dark {
+    --background: 200 10% 10%;
+    --foreground: 200 20% 98%;
+ 
+    --card: 200 10% 10%;
+    --card-foreground: 200 20% 98%;
+ 
+    --popover: 200 10% 10%;
+    --popover-foreground: 200 20% 98%;
+ 
+    --primary: 208.8 83.3% 53.1%;
+    --primary-foreground: 210 20% 98%;
+ 
+    --secondary: 200 10% 15%;
+    --secondary-foreground: 200 20% 98%;
+ 
+    --muted: 200 10% 15%;
+    --muted-foreground: 200 7% 65%;
+ 
+    --accent: 268.4 67.3% 60.2%;
+    --accent-foreground: 210 20% 98%;
+ 
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 20% 98%;
+
+    --success: 142.1 76.2% 36.3%;
+    --success-foreground: 210 20% 98%;
+
+    --warning: 38.9 92.3% 50%;
+    --warning-foreground: 210 20% 98%;
+ 
+    --border: 200 10% 20%;
+    --input: 200 10% 20%;
+    --ring: 208.8 83.3% 53.1%;
+  }
 }
-main {
-  max-width: 800px;
-  margin: 0 auto;
-  background-color: #ffffff;
-  padding: 2rem;
-  border-radius: 8px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-}
-h1 {
-  font-size: 2.25rem; /* 36px */
-  font-weight: 700;
-  color: #2d3748; /* Slightly lighter dark text */
-  margin-bottom: 1rem;
-}
-p {
-  margin-bottom: 1rem;
-  color: #4a5568; /* Medium gray text */
-}
-a {
-  color: #2b6cb0; /* Blue link */
-  text-decoration: none;
-}
-a:hover {
-  text-decoration: underline;
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
 }

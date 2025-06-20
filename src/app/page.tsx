@@ -1,17 +1,28 @@
 
-// src/app/page.tsx
+"use client";
+
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/hooks/useAuth';
+import { Loader2 } from 'lucide-react';
+
 export default function HomePage() {
-  console.log('[HomePage] Rendering...');
+  const { user, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading) {
+      if (user) {
+        router.replace('/dashboard');
+      } else {
+        router.replace('/login');
+      }
+    }
+  }, [user, loading, router]);
+
   return (
-    <div>
-      <h1>Welcome to Minimal ARIA Test</h1>
-      <p>If you see this, the Next.js frontend is working.</p>
-      <p>
-        Try accessing the <a href="/api/health" style={{color: "blue", textDecoration: "underline"}}>Test /api/health</a> endpoint.
-      </p>
-       <p>
-        Or try: <a href="/api/ping" style={{color: "blue", textDecoration: "underline"}}>Test /api/ping</a> endpoint.
-      </p>
+    <div className="flex h-screen w-screen items-center justify-center">
+      <Loader2 className="h-12 w-12 animate-spin text-primary" />
     </div>
   );
 }

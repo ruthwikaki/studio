@@ -2,16 +2,21 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { OrderDocument, OrderItem } from '@/lib/types/firestore';
+import type { OrderDocument } from '@/lib/types/firestore';
 import type { OptimizeReordersOutput } from '@/ai/flows/reorderOptimization';
 import { useToast } from './use-toast';
+import { useAuth } from './useAuth';
 
 const REORDER_SUGGESTIONS_QUERY_KEY = 'reorderSuggestions';
 const ORDERS_QUERY_KEY = 'orders';
 
 
-const fetchReorderSuggestions = async (): Promise<OptimizeReordersOutput> => {
-  const response = await fetch('/api/orders/reorder-suggestions');
+const fetchReorderSuggestions = async (token: string | null): Promise<OptimizeReordersOutput> => {
+  if (!token) throw new Error("Authentication token is required.");
+  
+  const response = await fetch('/api/orders/reorder-suggestions', {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ error: 'Failed to fetch reorder suggestions' }));
     throw new Error(errorData.error || 'Failed to fetch reorder suggestions');
@@ -21,9 +26,11 @@ const fetchReorderSuggestions = async (): Promise<OptimizeReordersOutput> => {
 };
 
 export function useReorderSuggestions() {
+  const { token } = useAuth();
   return useQuery<OptimizeReordersOutput, Error>({
     queryKey: [REORDER_SUGGESTIONS_QUERY_KEY],
-    queryFn: fetchReorderSuggestions,
+    queryFn: () => fetchReorderSuggestions(token),
+    enabled: !!token,
   });
 }
 
@@ -32,7 +39,7 @@ interface CreatePOItemPayload {
   name: string;
   productId: string;
   quantity: number;
-  unitPrice: number; // Cost from supplier for this item
+  unitPrice: number;
 }
 interface CreatePOPayload {
   items: CreatePOItemPayload[];
@@ -40,10 +47,15 @@ interface CreatePOPayload {
   notes?: string;
 }
 
-const createPurchaseOrder = async (payload: CreatePOPayload): Promise<OrderDocument> => {
+const createPurchaseOrder = async (payload: CreatePOPayload, token: string | null): Promise<OrderDocument> => {
+  if (!token) throw new Error("Authentication token is required.");
+
   const response = await fetch('/api/orders/create-po', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
@@ -57,9 +69,10 @@ const createPurchaseOrder = async (payload: CreatePOPayload): Promise<OrderDocum
 export function useCreatePurchaseOrder() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { token } = useAuth();
 
   return useMutation<OrderDocument, Error, CreatePOPayload>({
-    mutationFn: createPurchaseOrder,
+    mutationFn: (poPayload) => createPurchaseOrder(poPayload, token),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [ORDERS_QUERY_KEY] });
       queryClient.invalidateQueries({ queryKey: ['inventoryItems'] });

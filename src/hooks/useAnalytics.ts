@@ -4,6 +4,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { ForecastDemandInput, ForecastDemandOutput } from '@/ai/flows/forecasting';
 import { useToast } from './use-toast';
+import { useAuth } from './useAuth';
 
 const ANALYTICS_DASHBOARD_QUERY_KEY = 'analyticsDashboard';
 const DEMAND_FORECAST_MUTATION_KEY = 'generateDemandForecast';
@@ -20,40 +21,26 @@ interface DashboardKPIs {
   turnoverRate?: number;
 }
 
-const fetchDashboardKPIs = async (): Promise<{ data: DashboardKPIs, source: string }> => {
-  const response = await fetch('/api/analytics/dashboard');
+const fetchDashboardKPIs = async (token: string | null): Promise<{ data: DashboardKPIs, source: string }> => {
+  if (!token) throw new Error("Authentication token is required.");
+  
+  const response = await fetch('/api/analytics/dashboard', {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+
   if (!response.ok) {
-    let apiErrorPart = '';
-    let detailsPart = '';
-    try {
-      const errorData = await response.json();
-      if (errorData.error) {
-        apiErrorPart = errorData.error;
-      } else if (errorData.message) {
-        apiErrorPart = errorData.message;
-      }
-      if (errorData.details) {
-        detailsPart = `Details: ${typeof errorData.details === 'string' ? errorData.details : JSON.stringify(errorData.details)}`;
-      }
-    } catch (e) {
-      // Failed to parse error JSON
-    }
-    // Construct the final error message
-    let finalErrorMessage = 'Failed to fetch dashboard KPIs.'; // Default if no specific message from API
-    if (apiErrorPart) {
-      finalErrorMessage = `${apiErrorPart}${detailsPart ? ' ' + detailsPart : ''}`;
-    } else if (detailsPart) { 
-      finalErrorMessage += ` ${detailsPart}`;
-    }
-    throw new Error(finalErrorMessage);
+    const errorData = await response.json().catch(() => ({ error: 'Failed to fetch dashboard KPIs' }));
+    throw new Error(errorData.error || 'Failed to fetch dashboard KPIs');
   }
   return response.json();
 };
 
 export function useAnalyticsDashboard(options?: { refetchInterval?: number | false }) {
+  const { token } = useAuth();
   return useQuery<{ data: DashboardKPIs, source: string }, Error>({
     queryKey: [ANALYTICS_DASHBOARD_QUERY_KEY],
-    queryFn: fetchDashboardKPIs,
+    queryFn: () => fetchDashboardKPIs(token),
+    enabled: !!token,
     refetchInterval: options?.refetchInterval,
   });
 }
@@ -63,35 +50,36 @@ interface GenerateForecastJobResponse {
   jobId: string;
 }
 
-const generateDemandForecastAPI = async (input: ForecastDemandInput): Promise<GenerateForecastJobResponse> => {
+const generateDemandForecastAPI = async (input: ForecastDemandInput, token: string | null): Promise<GenerateForecastJobResponse> => {
+  if (!token) throw new Error("Authentication token is required.");
+
   const response = await fetch('/api/analytics/forecast', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
     body: JSON.stringify(input),
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ error: 'Failed to queue forecast generation' }));
     throw new Error(errorData.error || 'Failed to queue forecast generation');
   }
-  // The API now returns a job ID and message
   return response.json();
 };
 
 export function useGenerateDemandForecast() {
   const { toast } = useToast();
-  const queryClient = useQueryClient();
+  const { token } = useAuth();
 
   return useMutation<GenerateForecastJobResponse, Error, ForecastDemandInput>({
     mutationKey: [DEMAND_FORECAST_MUTATION_KEY],
-    mutationFn: generateDemandForecastAPI,
+    mutationFn: (forecastInput) => generateDemandForecastAPI(forecastInput, token),
     onSuccess: (data, variables) => {
       toast({
         title: 'Forecast Queued',
         description: `${data.message} (Job ID: ${data.jobId}). SKU: ${variables.sku}`,
       });
-      // Optionally, you might want to invalidate queries related to job statuses or forecast lists here
-      // e.g., queryClient.invalidateQueries({ queryKey: ['forecastJobs'] });
-      // queryClient.invalidateQueries({ queryKey: ['forecasts', variables.sku] }); // To refetch when job is done
     },
     onError: (error) => {
       toast({
@@ -102,4 +90,3 @@ export function useGenerateDemandForecast() {
     },
   });
 }
-

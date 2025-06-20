@@ -1,34 +1,29 @@
 
 "use client";
 
-import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { DocumentMetadata, DocumentStatus, ExtractedDocumentData } from '@/lib/types/firestore';
 import { useToast } from './use-toast';
+import { useAuth } from './useAuth';
 
 export const DOCUMENTS_QUERY_KEY = 'documentsList';
 export const DOCUMENT_DETAIL_QUERY_KEY = 'documentDetail';
 
-// --- API Fetching Functions ---
-
+// API Fetching Functions
 interface FetchDocumentsParams {
-  pageParam?: string; // For infinite query, this is the startAfterDocId
+  pageParam?: string;
   limit?: number;
   type?: DocumentMetadata['documentTypeHint'];
   status?: DocumentStatus;
   dateFrom?: string;
   dateTo?: string;
   searchQuery?: string;
+  token: string | null;
 }
 
-const fetchDocuments = async ({
-  pageParam, // startAfterDocId
-  limit = 10,
-  type,
-  status,
-  dateFrom,
-  dateTo,
-  searchQuery,
-}: FetchDocumentsParams): Promise<{ data: Partial<DocumentMetadata>[]; pagination: { count: number; nextCursor: string | null } }> => {
+const fetchDocuments = async ({ pageParam, limit = 10, type, status, dateFrom, dateTo, searchQuery, token }: FetchDocumentsParams) => {
+  if (!token) throw new Error("Authentication token is required.");
+  
   const params = new URLSearchParams();
   params.append('limit', String(limit));
   if (pageParam) params.append('startAfter', pageParam);
@@ -38,7 +33,9 @@ const fetchDocuments = async ({
   if (dateTo) params.append('dateTo', dateTo);
   if (searchQuery) params.append('search', searchQuery);
 
-  const response = await fetch(`/api/documents?${params.toString()}`);
+  const response = await fetch(`/api/documents?${params.toString()}`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ error: 'Failed to fetch documents' }));
     throw new Error(errorData.error || 'Failed to fetch documents');
@@ -46,8 +43,12 @@ const fetchDocuments = async ({
   return response.json();
 };
 
-const fetchDocumentById = async (id: string): Promise<DocumentMetadata> => {
-  const response = await fetch(`/api/documents/${id}`);
+const fetchDocumentById = async (id: string, token: string | null): Promise<DocumentMetadata> => {
+  if (!token) throw new Error("Authentication token is required.");
+  
+  const response = await fetch(`/api/documents/${id}`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ error: `Failed to fetch document ${id}` }));
     throw new Error(errorData.error || `Failed to fetch document ${id}`);
@@ -56,9 +57,12 @@ const fetchDocumentById = async (id: string): Promise<DocumentMetadata> => {
   return result.data;
 };
 
-const uploadDocumentFile = async (formData: FormData): Promise<{ documentId: string; fileUrl: string; message: string }> => {
+const uploadDocumentFile = async (formData: FormData, token: string | null) => {
+  if (!token) throw new Error("Authentication token is required.");
+  
   const response = await fetch('/api/documents/upload', {
     method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}` },
     body: formData,
   });
   if (!response.ok) {
@@ -68,9 +72,12 @@ const uploadDocumentFile = async (formData: FormData): Promise<{ documentId: str
   return response.json();
 };
 
-const processDocument = async (documentId: string): Promise<{ message: string; extractedData: ExtractedDocumentData; newStatus: DocumentStatus, poMatchDetails?: any }> => {
+const processDocument = async (documentId: string, token: string | null) => {
+  if (!token) throw new Error("Authentication token is required.");
+  
   const response = await fetch(`/api/documents/process/${documentId}`, {
     method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}` },
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ error: `Failed to process document ${documentId}` }));
@@ -79,9 +86,12 @@ const processDocument = async (documentId: string): Promise<{ message: string; e
   return response.json();
 };
 
-const approveDocument = async (documentId: string): Promise<{ message: string; documentId: string }> => {
+const approveDocument = async (documentId: string, token: string | null) => {
+  if (!token) throw new Error("Authentication token is required.");
+  
   const response = await fetch(`/api/documents/${documentId}/approve`, {
     method: 'PUT',
+    headers: { 'Authorization': `Bearer ${token}` },
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ error: `Failed to approve document ${documentId}` }));
@@ -90,9 +100,12 @@ const approveDocument = async (documentId: string): Promise<{ message: string; d
   return response.json();
 };
 
-const deleteDocument = async (documentId: string): Promise<{ message: string }> => {
+const deleteDocument = async (documentId: string, token: string | null) => {
+    if (!token) throw new Error("Authentication token is required.");
+    
     const response = await fetch(`/api/documents/${documentId}`, {
         method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` },
     });
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: `Failed to delete document ${documentId}`}));
@@ -102,42 +115,37 @@ const deleteDocument = async (documentId: string): Promise<{ message: string }> 
 };
 
 
-// --- React Query Hooks ---
-
-export function useDocumentsList(filters?: Omit<FetchDocumentsParams, 'pageParam'>) {
-  return useInfiniteQuery<
-    { data: Partial<DocumentMetadata>[]; pagination: { count: number; nextCursor: string | null } },
-    Error,
-    { data: Partial<DocumentMetadata>[]; pagination: { count: number; nextCursor: string | null } },
-    any, // For queryKey
-    string | undefined // For pageParam type
-  >({
-    queryKey: [DOCUMENTS_QUERY_KEY, filters],
-    queryFn: ({ pageParam }) => fetchDocuments({ ...filters, pageParam }),
+// React Query Hooks
+export function useDocumentsList(filters?: Omit<FetchDocumentsParams, 'pageParam' | 'token'>) {
+  const { token } = useAuth();
+  return useInfiniteQuery({
+    queryKey: [DOCUMENTS_QUERY_KEY, { filters }],
+    queryFn: ({ pageParam }) => fetchDocuments({ ...filters, pageParam, token }),
     getNextPageParam: (lastPage) => lastPage.pagination.nextCursor,
     initialPageParam: undefined,
+    enabled: !!token,
   });
 }
 
 export function useDocumentDetail(id: string | null) {
+  const { token } = useAuth();
   return useQuery<DocumentMetadata, Error>({
     queryKey: [DOCUMENT_DETAIL_QUERY_KEY, id],
-    queryFn: () => fetchDocumentById(id!),
-    enabled: !!id,
+    queryFn: () => fetchDocumentById(id!, token),
+    enabled: !!id && !!token,
   });
 }
 
 export function useUploadDocumentFile() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { token } = useAuth();
 
-  return useMutation<{ documentId: string; fileUrl: string; message: string }, Error, FormData>({
-    mutationFn: uploadDocumentFile,
+  return useMutation({
+    mutationFn: (formData: FormData) => uploadDocumentFile(formData, token),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [DOCUMENTS_QUERY_KEY] });
       toast({ title: 'Upload Successful', description: data.message });
-      // Optionally trigger processing immediately or let user do it.
-      // E.g., processDocumentMutation.mutate(data.documentId);
     },
     onError: (error) => {
       toast({ title: 'Upload Error', description: error.message, variant: 'destructive' });
@@ -148,16 +156,17 @@ export function useUploadDocumentFile() {
 export function useProcessDocument() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { token } = useAuth();
 
-  return useMutation<{ message: string; extractedData: ExtractedDocumentData; newStatus: DocumentStatus }, Error, string>({
-    mutationFn: processDocument,
+  return useMutation({
+    mutationFn: (documentId: string) => processDocument(documentId, token),
     onSuccess: (data, documentId) => {
       queryClient.invalidateQueries({ queryKey: [DOCUMENTS_QUERY_KEY] });
       queryClient.invalidateQueries({ queryKey: [DOCUMENT_DETAIL_QUERY_KEY, documentId] });
       toast({ title: 'Processing Complete', description: `Document processed. Status: ${data.newStatus}` });
     },
     onError: (error, documentId) => {
-      queryClient.invalidateQueries({ queryKey: [DOCUMENT_DETAIL_QUERY_KEY, documentId] }); // To show error state on detail page
+      queryClient.invalidateQueries({ queryKey: [DOCUMENT_DETAIL_QUERY_KEY, documentId] });
       toast({ title: 'Processing Error', description: error.message, variant: 'destructive' });
     },
   });
@@ -166,9 +175,10 @@ export function useProcessDocument() {
 export function useApproveDocument() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { token } = useAuth();
 
-  return useMutation<{ message: string; documentId: string }, Error, string>({
-    mutationFn: approveDocument,
+  return useMutation({
+    mutationFn: (documentId: string) => approveDocument(documentId, token),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [DOCUMENTS_QUERY_KEY] });
       queryClient.invalidateQueries({ queryKey: [DOCUMENT_DETAIL_QUERY_KEY, data.documentId] });
@@ -180,16 +190,15 @@ export function useApproveDocument() {
   });
 }
 
-
 export function useDeleteDocument() {
     const queryClient = useQueryClient();
     const { toast } = useToast();
+    const { token } = useAuth();
 
-    return useMutation<{ message: string }, Error, string>({
-        mutationFn: deleteDocument,
+    return useMutation({
+        mutationFn: (documentId: string) => deleteDocument(documentId, token),
         onSuccess: (data, documentId) => {
             queryClient.invalidateQueries({ queryKey: [DOCUMENTS_QUERY_KEY] });
-            // If on a detail page for this doc, you might want to redirect or update UI
             queryClient.removeQueries({ queryKey: [DOCUMENT_DETAIL_QUERY_KEY, documentId]});
             toast({ title: "Document Deleted", description: data.message });
         },
@@ -198,5 +207,3 @@ export function useDeleteDocument() {
         }
     });
 }
-
-    
