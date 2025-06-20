@@ -1,67 +1,64 @@
 
 // src/app/api/health/route.ts
+console.log('[API /api/health/route.ts] File loaded by Next.js runtime.');
+
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { isAdminInitialized, getDb, getInitializationError, admin } from '@/lib/firebase/admin';
 
-// THIS LOG IS CRITICAL FOR DIAGNOSIS: If it doesn't appear on server start/request, Next.js isn't loading this file.
-console.log('[API /api/health/route.ts] File loaded and parsed by Next.js/Node.');
-
-export const dynamic = 'force-dynamic'; // Ensures the route is always re-evaluated
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export async function GET(request: NextRequest) {
   console.log('[API /api/health] GET request handler invoked.');
-  let firestoreStatus = 'not_checked';
-  let firestoreError = null;
-  let sdkInitializationError = null;
   let adminSDKIsInitialized = false;
-  let adminSDKInitializationDetails = "Not determined";
+  let sdkInitializationDetails = "Not determined";
+  let firestoreStatus = 'not_checked';
+  let firestoreErrorDetails = null;
 
   if (isAdminInitialized()) {
     adminSDKIsInitialized = true;
-    adminSDKInitializationDetails = "Admin SDK reported as initialized by isAdminInitialized().";
-    console.log('[API /api/health] Admin SDK reported as initialized.');
+    sdkInitializationDetails = "Admin SDK reported as initialized by isAdminInitialized().";
+    console.log('[API /api/health] Admin SDK reported as initialized by route handler.');
     const db = getDb();
     if (db) {
       try {
         console.log('[API /api/health] Attempting Firestore read operation...');
-        // Perform a simple read operation, e.g., get a document or list collections
         await db.collection('_health_check_api_route').limit(1).get();
         firestoreStatus = 'reachable';
         console.log('[API /api/health] Firestore check successful via API route.');
       } catch (e: any) {
         firestoreStatus = 'unreachable';
-        firestoreError = e.message;
+        firestoreErrorDetails = e.message;
         console.error('[API /api/health] Firestore check via API route FAILED:', e.message);
       }
     } else {
       firestoreStatus = 'db_instance_null_in_api';
-      firestoreError = 'Firestore instance (db) is null from getDb() in API route, even though Admin SDK reported as initialized.';
-      adminSDKInitializationDetails = `Admin SDK reported as initialized, but getDb() returned null. ${getInitializationError() || ''}`;
-      console.error(`[API /api/health] Firestore instance is null in API route. Admin SDK init error was: ${getInitializationError()}`);
+      firestoreErrorDetails = 'Firestore instance (db) is null from getDb() in API route, even though Admin SDK reported as initialized.';
+      sdkInitializationDetails = `Admin SDK reported as initialized, but getDb() returned null. Potential internal issue in admin.ts or service access. Error from getInitializationError(): ${getInitializationError() || 'None'}`;
+      console.error(`[API /api/health] Firestore instance is null in API route. Admin SDK init error (if any) was: ${getInitializationError()}`);
     }
   } else {
     firestoreStatus = 'admin_sdk_not_initialized_in_api';
-    sdkInitializationError = getInitializationError();
-    adminSDKInitializationDetails = `Admin SDK reported as NOT initialized by isAdminInitialized(). Error: ${sdkInitializationError}`;
-    firestoreError = `Firebase Admin SDK not initialized when API route was called. Init Error: ${sdkInitializationError}`;
-    console.error(`[API /api/health] Firebase Admin SDK not initialized in API route. Init Error: ${sdkInitializationError}`);
+    const specificError = getInitializationError();
+    sdkInitializationDetails = `Admin SDK reported as NOT initialized by isAdminInitialized(). Error: ${specificError || 'No specific error message captured by getInitializationError(). Check startup logs.'}`;
+    firestoreErrorDetails = `Firebase Admin SDK not initialized when API route was called. Specific Init Error: ${specificError || 'No specific error message. Check startup logs for admin.ts CRITICAL ERRORS.'}`;
+    console.error(`[API /api/health] Firebase Admin SDK not initialized in API route. Specific Init Error: ${specificError}`);
   }
 
   const responsePayload = {
     status: 'ok',
-    message: 'Health check endpoint reached successfully.',
+    message: 'Health check from /api/health GET handler.',
     timestamp: new Date().toISOString(),
     adminSDK: {
       isInitialized: adminSDKIsInitialized,
-      details: adminSDKInitializationDetails,
-      reportedError: sdkInitializationError,
+      details: sdkInitializationDetails,
     },
     firestore: {
       status: firestoreStatus,
-      error: firestoreError,
+      error: firestoreErrorDetails,
     },
-    nextJsVersion: process.versions.node, // Shows Node version used by Next.js
+    nextJsVersion: process.versions.node,
   };
   console.log('[API /api/health] Sending success response:', JSON.stringify(responsePayload));
   return NextResponse.json(responsePayload);

@@ -1,39 +1,37 @@
 
 // src/lib/firebase/admin.ts
-import * as admin from 'firebase-admin';
+import * Fadmin from 'firebase-admin'; // Use Fadmin to avoid conflict with local 'admin' export
 import * as fs from 'fs';
 import * as path from 'path';
 
-let adminInstance: admin.app.App | null = null;
+let adminInstance: Fadmin.app.App | null = null;
 let initializationError: Error | null = null;
-// Using a unique name for the app can help prevent conflicts if Firebase is initialized elsewhere.
-const ARIA_ADMIN_APP_NAME = 'ARIA_ADMIN_APP_PRIMARY_INSTANCE'; 
+const ARIA_ADMIN_APP_NAME = 'ARIA_ADMIN_APP_PRIMARY_INSTANCE';
 
-console.log("[Admin SDK] Module loaded. Initial state: adminInstance is null, initializationError is null.");
+console.log(`[Admin SDK] Module loaded. Initial state: adminInstance is ${adminInstance ? 'set' : 'null'}, initializationError is ${initializationError ? initializationError.message : 'null'}.`);
 
 function initializeAdminAppSingleton(): void {
   console.log(`[Admin SDK] initializeAdminAppSingleton CALLED (Using Named App: ${ARIA_ADMIN_APP_NAME}).`);
 
-  // Prevent re-initialization if already successful or if a definitive error occurred.
   if (adminInstance && !initializationError) {
-    console.log("[Admin SDK] Already initialized and instance cached. Returning.");
+    console.log(`[Admin SDK] Already initialized and instance cached ('${ARIA_ADMIN_APP_NAME}'). Project: ${adminInstance.options.projectId}. Returning.`);
     return;
   }
   if (initializationError) {
-    console.warn("[Admin SDK] Initialization previously failed. Not re-attempting. Error was:", initializationError.message);
+    console.warn(`[Admin SDK] Initialization previously failed for '${ARIA_ADMIN_APP_NAME}'. Not re-attempting. Error was: ${initializationError.message}`);
     return;
   }
 
   try {
-    // Try to get an existing app by name first.
     console.log(`[Admin SDK] Attempting to get existing app named '${ARIA_ADMIN_APP_NAME}'.`);
-    adminInstance = admin.app(ARIA_ADMIN_APP_NAME);
+    adminInstance = Fadmin.app(ARIA_ADMIN_APP_NAME);
     console.log(`[Admin SDK] Existing named app '${ARIA_ADMIN_APP_NAME}' found and adopted. Project ID: ${adminInstance.options.projectId || 'N/A'}.`);
-    initializationError = null; // Clear any prior conceptual error
+    initializationError = null;
     return;
   } catch (e: any) {
-    // Expected error if the app doesn't exist, so we'll initialize it.
-    if (e.code !== 'app/no-app' && !(e.message && e.message.includes("does not exist"))) {
+    if (e.code === 'app/no-app' || (e.message && e.message.includes("does not exist"))) {
+      console.log(`[Admin SDK] No existing app named '${ARIA_ADMIN_APP_NAME}'. Proceeding to initialize a new one.`);
+    } else {
       const errorMsg = `Unexpected error while checking for existing named app '${ARIA_ADMIN_APP_NAME}': ${e.message}`;
       initializationError = new Error(errorMsg);
       console.error("--------------------------------------------------------------------");
@@ -42,7 +40,6 @@ function initializeAdminAppSingleton(): void {
       console.error("--------------------------------------------------------------------");
       return;
     }
-    console.log(`[Admin SDK] No existing app named '${ARIA_ADMIN_APP_NAME}'. Proceeding to initialize a new one.`);
   }
 
   console.log("[Admin SDK] Attempting to initialize a new Firebase Admin SDK instance...");
@@ -52,7 +49,7 @@ function initializeAdminAppSingleton(): void {
   console.log(`[Admin SDK] Expected service account key path: ${serviceAccountPath}`);
 
   if (!fs.existsSync(serviceAccountPath)) {
-    const errorMsg = `Service account key file not found at resolved path: ${serviceAccountPath}. Current CWD: ${currentCwd}. Ensure 'service-account-key.json' is in the project root directory or that the path is correctly resolved in this Next.js environment.`;
+    const errorMsg = `Service account key file not found at resolved path: ${serviceAccountPath}. Current CWD: ${currentCwd}. Ensure 'service-account-key.json' is in the project root directory.`;
     initializationError = new Error(errorMsg);
     console.error("--------------------------------------------------------------------");
     console.error(`[Admin SDK] CRITICAL ERROR: ${initializationError.message}`);
@@ -88,11 +85,11 @@ function initializeAdminAppSingleton(): void {
 
   let credential;
   try {
-      credential = admin.credential.cert(serviceAccount);
-      console.log("[Admin SDK] admin.credential.cert(serviceAccount) SUCCEEDED.");
+      credential = Fadmin.credential.cert(serviceAccount);
+      console.log("[Admin SDK] Fadmin.credential.cert(serviceAccount) SUCCEEDED.");
   } catch (credError: any) {
       const errorMsg = `Error creating Firebase credential from service account: ${credError.message}`;
-      initializationError = new Error(errorMsg); 
+      initializationError = new Error(errorMsg);
       console.error("--------------------------------------------------------------------");
       console.error(`[Admin SDK] CRITICAL ERROR: ${initializationError.message}`);
       console.error("  Stack (credError):", credError.stack);
@@ -101,139 +98,98 @@ function initializeAdminAppSingleton(): void {
   }
 
   try {
-    console.log(`[Admin SDK] Calling admin.initializeApp() for '${ARIA_ADMIN_APP_NAME}' with projectId: ${serviceAccount.project_id}...`);
-    adminInstance = admin.initializeApp({
+    console.log(`[Admin SDK] Calling Fadmin.initializeApp() for '${ARIA_ADMIN_APP_NAME}' with projectId: ${serviceAccount.project_id}...`);
+    adminInstance = Fadmin.initializeApp({
       credential,
-      projectId: serviceAccount.project_id, // Explicitly set projectId here
-    }, ARIA_ADMIN_APP_NAME); // Use the unique name
-    
+      projectId: serviceAccount.project_id,
+    }, ARIA_ADMIN_APP_NAME);
+
     if (!adminInstance || !adminInstance.options || !adminInstance.options.projectId) {
       const errorMsg = `Firebase Admin SDK initialized, but the resulting app instance or its projectId is invalid/missing. App Name: ${adminInstance?.name}, ProjectID from App Options: ${adminInstance?.options?.projectId}`;
       initializationError = new Error(errorMsg);
       console.error("--------------------------------------------------------------------");
       console.error(`[Admin SDK] CRITICAL ERROR: ${initializationError.message}`);
       console.error("--------------------------------------------------------------------");
-      adminInstance = null; 
+      adminInstance = null;
       return;
     }
 
-    console.log(`[Admin SDK] Firebase Admin SDK initialized successfully. App name: ${adminInstance.name}, Project ID: ${adminInstance.options.projectId}`);
-    initializationError = null;
+    console.log(`[Admin SDK] Firebase Admin SDK initialized successfully for named app '${adminInstance.name}'. Project ID: ${adminInstance.options.projectId}`);
+    initializationError = null; // Explicitly clear error on success
   } catch (error: any) {
-    if (error.code === 'app/duplicate-app' && error.message.includes(ARIA_ADMIN_APP_NAME)) {
-        console.warn(`[Admin SDK] App named '${ARIA_ADMIN_APP_NAME}' already exists. Attempting to use it.`);
-        try {
-            adminInstance = admin.app(ARIA_ADMIN_APP_NAME);
-            initializationError = null;
-            console.log(`[Admin SDK] Successfully adopted existing named app '${ARIA_ADMIN_APP_NAME}'. Project ID: ${adminInstance.options.projectId || 'N/A'}.`);
-        } catch (e: any) {
-            const errorMsg = `Failed to get existing app '${ARIA_ADMIN_APP_NAME}' after duplicate-app error: ${e.message}`;
-            initializationError = new Error(errorMsg);
-            console.error("--------------------------------------------------------------------");
-            console.error(`[Admin SDK] CRITICAL ERROR: ${initializationError.message}`);
-            console.error("  Stack (getting duplicate app):", e.stack);
-            console.error("--------------------------------------------------------------------");
-        }
-    } else {
-        const errorMsg = `Error during new Firebase Admin SDK initialization: ${error.message}`;
-        initializationError = new Error(errorMsg);
-        console.error("--------------------------------------------------------------------");
-        console.error(`[Admin SDK] CRITICAL ERROR: ${initializationError.message}`);
-        if (error.stack) console.error("  Stack (main init block):", error.stack.substring(0, 500));
-        console.error("--------------------------------------------------------------------");
-    }
+    // This catch block is specifically for errors from initializeApp itself
+    const errorMsg = `Error during new Firebase Admin SDK initialization for '${ARIA_ADMIN_APP_NAME}': ${error.message}`;
+    initializationError = new Error(errorMsg); // Set the error
+    console.error("--------------------------------------------------------------------");
+    console.error(`[Admin SDK] CRITICAL ERROR: ${initializationError.message}`);
+    if (error.stack) console.error("  Stack (main init block):", error.stack.substring(0, 500));
+    console.error("--------------------------------------------------------------------");
+    adminInstance = null; // Ensure instance is null on failure
   }
-  
+
   if (!adminInstance && !initializationError) {
-    initializationError = new Error("[Admin SDK] Initialization process completed, but adminInstance remains null. This is an unexpected state.");
+    // This case should ideally not be reached if logic above is correct
+    initializationError = new Error(`[Admin SDK] Initialization process for '${ARIA_ADMIN_APP_NAME}' completed, but adminInstance remains null and no specific error was caught. This is an unexpected state.`);
     console.error("--------------------------------------------------------------------");
     console.error(`[Admin SDK] CRITICAL ERROR: ${initializationError.message}`);
     console.error("--------------------------------------------------------------------");
   }
 }
 
-// Attempt initialization when module is loaded
-initializeAdminAppSingleton(); 
+initializeAdminAppSingleton();
 
 export function isAdminInitialized(): boolean {
-  if (adminInstance && !initializationError) {
-    return true;
+  const isInit = !!adminInstance && !initializationError;
+  if (!isInit) {
+    console.warn(`[Admin SDK - isAdminInitialized Status Check] Returning ${isInit}. Reason: adminInstance is ${adminInstance ? 'set' : 'null'}, initializationError is ${initializationError ? `'${initializationError.message}'` : 'null'}`);
+  } else {
+    // console.log(`[Admin SDK - isAdminInitialized Status Check] Returning true. Admin app '${adminInstance?.name}' on project '${adminInstance?.options.projectId}' is ready.`);
   }
-  if (initializationError) {
-    // This log is helpful to see during API calls if init failed earlier
-    console.warn(`[Admin SDK - isAdminInitialized Status Check] Returning false. Reason: initializationError is set: '${initializationError.message}'`);
-  } else if (!adminInstance) {
-    console.warn("[Admin SDK - isAdminInitialized Status Check] Returning false. Reason: adminInstance is null and no specific initializationError was recorded.");
-  }
-  return false;
+  return isInit;
 }
 
 export function getInitializationError(): string | null {
     if (initializationError) {
         return `Admin SDK Init Error: ${initializationError.message}${initializationError.stack ? ` | Stack (first 200 chars): ${initializationError.stack.substring(0,200)}...` : ''}`;
     }
-    if (!adminInstance) { // If no specific error, but instance is null, provide a generic message.
+    if (!adminInstance) {
         return "Admin SDK Init Error: adminInstance is null, and no specific error was recorded during initialization. Check server startup logs for 'CRITICAL ERROR' messages from admin.ts.";
     }
     return null;
 }
 
-export function getDb(): admin.firestore.Firestore | null {
+function getService<T>(serviceGetter: () => T, serviceName: string): T | null {
   if (!adminInstance && !initializationError) {
-    console.warn("[Admin SDK - getDb] adminInstance is null, and no prior initializationError. Attempting lazy re-initialization.");
+    console.warn(`[Admin SDK - get${serviceName}] adminInstance is null, and no prior initializationError. Attempting lazy re-initialization.`);
     initializeAdminAppSingleton();
   }
   if (!adminInstance || initializationError) {
-    console.error(`[Admin SDK - getDb] Called when Admin SDK is not properly initialized. Error: ${getInitializationError()}`);
+    console.error(`[Admin SDK - get${serviceName}] Called when Admin SDK is not properly initialized. Error: ${getInitializationError()}`);
     return null;
   }
   try {
-    return adminInstance.firestore();
+    return serviceGetter();
   } catch (e: any) {
-    console.error("[Admin SDK - getDb] Error accessing firestore service from adminInstance:", e.message);
-    if (!initializationError) initializationError = new Error(`Error accessing Firestore service after init: ${e.message}`);
+    console.error(`[Admin SDK - get${serviceName}] Error accessing ${serviceName} service from adminInstance:`, e.message);
+    if (!initializationError) initializationError = new Error(`Error accessing ${serviceName} service after init: ${e.message}`);
     return null;
   }
 }
 
-export function getAuthAdmin(): admin.auth.Auth | null {
-  if (!adminInstance && !initializationError) {
-    console.warn("[Admin SDK - getAuthAdmin] adminInstance is null, and no prior initializationError. Attempting lazy re-initialization.");
-    initializeAdminAppSingleton();
-  }
-  if (!adminInstance || initializationError) {
-    console.error(`[Admin SDK - getAuthAdmin] Called when Admin SDK is not properly initialized. Error: ${getInitializationError()}`);
-    return null;
-  }
-   try {
-    return adminInstance.auth();
-  } catch (e: any) {
-    console.error("[Admin SDK - getAuthAdmin] Error accessing auth service from adminInstance:", e.message);
-    if (!initializationError) initializationError = new Error(`Error accessing Auth service after init: ${e.message}`);
-    return null;
-  }
+export function getDb(): Fadmin.firestore.Firestore | null {
+  return getService(() => adminInstance!.firestore(), 'Db (Firestore)');
 }
 
-export function getStorageAdmin(): admin.storage.Storage | null {
-  if (!adminInstance && !initializationError) {
-    console.warn("[Admin SDK - getStorageAdmin] adminInstance is null, and no prior initializationError. Attempting lazy re-initialization.");
-    initializeAdminAppSingleton();
-  }
-  if (!adminInstance || initializationError) {
-    console.error(`[Admin SDK - getStorageAdmin] Called when Admin SDK is not properly initialized. Error: ${getInitializationError()}`);
-    return null;
-  }
-  try {
-    return adminInstance.storage();
-  } catch (e: any) {
-    console.error("[Admin SDK - getStorageAdmin] Error accessing storage service from adminInstance:", e.message);
-    if (!initializationError) initializationError = new Error(`Error accessing Storage service after init: ${e.message}`);
-    return null;
-  }
+export function getAuthAdmin(): Fadmin.auth.Auth | null {
+  return getService(() => adminInstance!.auth(), 'AuthAdmin');
 }
 
-export const FieldValue = admin.firestore.FieldValue;
-export const AdminTimestamp = admin.firestore.Timestamp;
+export function getStorageAdmin(): Fadmin.storage.Storage | null {
+  return getService(() => adminInstance!.storage(), 'StorageAdmin');
+}
+
+export const FieldValue = Fadmin.firestore.FieldValue;
+export const AdminTimestamp = Fadmin.firestore.Timestamp;
 export type { Timestamp as AdminTimestampType } from 'firebase-admin/firestore';
-// Export the admin namespace itself if needed for types elsewhere, e.g., admin.firestore.Timestamp
-export { admin };
+// Export the Fadmin namespace itself if needed for types elsewhere, e.g., Fadmin.firestore.Timestamp
+export { Fadmin as admin }; // Renamed to Fadmin to avoid conflict with local admin object

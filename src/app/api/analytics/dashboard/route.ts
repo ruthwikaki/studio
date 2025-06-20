@@ -5,10 +5,10 @@ import { getDb, isAdminInitialized, getInitializationError, admin } from '@/lib/
 import { verifyAuthToken } from '@/lib/firebase/admin-auth';
 import type { InventoryStockDocument, OrderDocument, SalesHistoryDocument, DailyAggregateDocument } from '@/lib/types/firestore';
 
-export const dynamic = 'force-dynamic'; // Ensures the route is always re-evaluated
-export const revalidate = 0; // Explicitly disable caching for this dynamic route for now
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
-console.log('[API /api/analytics/dashboard/route.ts] File loaded.');
+console.log('[API /api/analytics/dashboard/route.ts] File loaded by Next.js runtime.');
 
 
 export async function GET(request: NextRequest) {
@@ -23,9 +23,8 @@ export async function GET(request: NextRequest) {
 
   const db = getDb();
   if (!db) {
-    // This case should ideally be caught by isAdminInitialized if initErrorMsg is set properly.
     const initErrorMsg = getInitializationError(); 
-    const detailedErrorMessage = `Firestore instance (db) is null. Reason: ${initErrorMsg || 'This usually means Admin SDK initialization failed critically earlier. Check server startup logs.'}`;
+    const detailedErrorMessage = `Firestore instance (db) is null. Reason: ${initErrorMsg || 'This usually means Admin SDK initialization failed critically earlier or getDb() failed. Check server startup logs.'}`;
     console.error(`[Analytics Dashboard API] AFTER SDK INIT CHECK BUT DB IS NULL: ${detailedErrorMessage}`);
     return NextResponse.json({ error: `Server configuration error: ${detailedErrorMessage}` }, { status: 500 });
   }
@@ -69,7 +68,7 @@ export async function GET(request: NextRequest) {
         pendingOrdersCount: 0, 
         todaysRevenue: typeof aggData.todaysRevenue === 'number' ? aggData.todaysRevenue : 0,
         inventoryValueByCategory: aggData.inventoryValueByCategory || {},
-        lastUpdated: (aggData.lastCalculated as admin.firestore.Timestamp)?.toDate()?.toISOString() || new Date().toISOString(),
+        lastUpdated: (aggData.lastCalculated as Fadmin.firestore.Timestamp)?.toDate()?.toISOString() || new Date().toISOString(),
         turnoverRate: typeof aggData.turnoverRate === 'number' ? aggData.turnoverRate : undefined,
       };
 
