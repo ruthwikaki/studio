@@ -48,7 +48,7 @@ export default function RegisterPage() {
                   <Package className="w-8 h-8 text-primary" />
                   <h1 className="text-2xl font-bold font-headline tracking-tighter">SupplyChainAI</h1>
                 </div>
-              <h2 className="text-2xl font-bold text-white">Create Your Account</h2>
+              <h2 className="text-2xl font-bold text-white">Register Your Account</h2>
               <p className="text-sm text-gray-300 mt-1">
                 Start your 14-day free trial. No credit card required.
               </p>
@@ -76,14 +76,14 @@ export default function RegisterPage() {
             <div className="pt-2">
               <Button type="submit" className="w-full bg-primary hover:bg-primary/80 text-white rounded-md" disabled={loading}>
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Create Account & Start Optimizing
+                Register & Start Optimizing
               </Button>
             </div>
             
             <p className="text-sm text-muted-foreground text-center">
               Already have an account?{' '}
               <Link href="/login" className="font-semibold text-primary hover:underline">
-                Sign In
+                Login
               </Link>
             </p>
           </div>

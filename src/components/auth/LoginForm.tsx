@@ -46,7 +46,7 @@ export default function LoginForm() {
   const handleGoogleSignIn = () => {
     toast({
       title: "Coming Soon!",
-      description: "Google Sign-In will be available in a future update.",
+      description: "Google Login will be available in a future update.",
     });
   };
 
@@ -64,7 +64,7 @@ export default function LoginForm() {
             <p className="text-sm text-gray-300">
               Don't have an account?{' '}
               <Link href="/register" className="text-primary hover:underline font-semibold">
-                Sign up
+                Register
               </Link>
             </p>
           </div>
@@ -103,11 +103,11 @@ export default function LoginForm() {
           <div className="space-y-3 pt-2">
             <Button type="submit" className="w-full bg-primary hover:bg-primary/80 text-white rounded-md" disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Sign In
+              Login
             </Button>
             <Button type="button" variant="outline" className="w-full bg-white/10 hover:bg-white/20 text-white border-white/20 hover:text-white" onClick={handleGoogleSignIn}>
               <GoogleIcon />
-              Sign in with Google
+              Login with Google
             </Button>
           </div>
         </div>
