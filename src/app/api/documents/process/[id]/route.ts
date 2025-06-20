@@ -1,11 +1,12 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { db, FieldValue, AdminTimestamp } from '@/lib/firebase/admin';
+import { getDb, FieldValue, AdminTimestamp, isAdminInitialized } from '@/lib/firebase/admin';
 import { verifyAuthToken } from '@/lib/firebase/admin-auth';
 import { extractDocumentData, DocumentExtractionInput, DocumentExtractionOutput } from '@/ai/flows/documentExtraction';
 import type { DocumentMetadata, OrderDocument } from '@/lib/types/firestore';
 import { z } from 'zod';
+import { admin } from '@/lib/firebase/admin'; // For admin.firestore.Timestamp
 
 const MOCK_OCR_TEXT_INVOICE = `
 Invoice #: INV-2024-001
@@ -33,19 +34,19 @@ Wireless Mouse        WM-02    10        15.00       150.00
 Subtotal: $4150.00
 `;
 
-
-// Simple helper to simulate a PO matching function
 async function findAndMatchPOs(invoiceData: any, companyId: string): Promise<{ matchedPoId?: string; matchScore?: number; details?: string }> {
+    if (!isAdminInitialized()) throw new Error("Admin SDK not initialized for findAndMatchPOs.");
+    const db = getDb();
+    if (!db) throw new Error("Firestore not available for findAndMatchPOs.");
+
     if (!invoiceData || invoiceData.documentType !== 'invoice' || !invoiceData.vendorDetails?.name) {
         return { details: "Invoice data insufficient for PO matching." };
     }
 
-    // Try to find POs from the same supplier with similar total amounts
     const potentialPOs = await db.collection('orders')
         .where('companyId', '==', companyId)
         .where('type', '==', 'purchase')
-        // .where('supplierName', '==', invoiceData.vendorDetails.name) // Requires supplierName denormalized on OrderDocument or fetching supplier first
-        .where('status', 'in', ['pending', 'awaiting_delivery', 'processing']) // Active POs
+        .where('status', 'in', ['pending', 'awaiting_delivery', 'processing'])
         .get();
 
     if (potentialPOs.empty) {
@@ -57,20 +58,17 @@ async function findAndMatchPOs(invoiceData: any, companyId: string): Promise<{ m
     for (const poDoc of potentialPOs.docs) {
         const po = poDoc.data() as OrderDocument;
         let score = 0;
-        // Basic matching: total amount within 10%
         if (invoiceData.totalAmount && po.totalAmount) {
             const diff = Math.abs(invoiceData.totalAmount - po.totalAmount) / po.totalAmount;
-            if (diff <= 0.10) score += 70; // High score for amount match
+            if (diff <= 0.10) score += 70;
             else if (diff <= 0.20) score += 40;
         }
-        // TODO: Add line item comparison for better scoring
-        
         if (bestMatch === null || score > bestMatch.score) {
             bestMatch = { poId: poDoc.id, score, poNumber: po.orderNumber };
         }
     }
     
-    if (bestMatch && bestMatch.score >= 50) { // Threshold for a "good enough" match
+    if (bestMatch && bestMatch.score >= 50) {
         return { matchedPoId: bestMatch.poId, matchScore: bestMatch.score, details: `Potential match found with PO ${bestMatch.poNumber || bestMatch.poId} (Score: ${bestMatch.score})` };
     }
     return { details: "No strong PO match found based on current criteria." };
@@ -78,6 +76,16 @@ async function findAndMatchPOs(invoiceData: any, companyId: string): Promise<{ m
 
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+  if (!isAdminInitialized()) {
+    console.error("[API Doc Process] Firebase Admin SDK not initialized.");
+    return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
+  }
+  const db = getDb();
+  if (!db) {
+    console.error("[API Doc Process] Firestore instance not available.");
+    return NextResponse.json({ error: "Server configuration error (no db)." }, { status: 500 });
+  }
+  
   let companyId: string, userId: string;
   try {
     const authResult = await verifyAuthToken(request);
@@ -105,35 +113,31 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     }
 
     if (documentMetadata.status !== 'pending_ocr' && documentMetadata.status !== 'uploaded' && documentMetadata.status !== 'ocr_complete') {
-        // Allow reprocessing if already extracted but maybe user wants to re-hint
-        if (documentMetadata.status !== 'extraction_complete' && documentMetadata.status !== 'pending_review') {
+        if (documentMetadata.status !== 'extraction_complete' && documentMetadata.status !== 'pending_review' && documentMetadata.status !== 'error') {
             return NextResponse.json({ error: `Document is not in a state to be processed. Current status: ${documentMetadata.status}` }, { status: 400 });
         }
     }
     
-    await docRef.update({ status: 'processing_extraction', lastUpdatedBy: userId });
+    await docRef.update({ status: 'processing_extraction', lastUpdatedBy: userId, lastUpdated: FieldValue.serverTimestamp() });
 
-    // Simulate OCR - in real app, OCR text would be populated by a separate process.
-    // Use documentTypeHint from metadata if available, otherwise default.
     const ocrText = documentMetadata.documentTypeHint === 'purchase_order' ? MOCK_OCR_TEXT_PO : MOCK_OCR_TEXT_INVOICE;
-    // TODO: Store actual OCR text from an OCR service (e.g., Google Vision API) if available.
 
     const extractionInput: DocumentExtractionInput = {
       documentText: ocrText,
       documentTypeHint: documentMetadata.documentTypeHint || 'auto_detect',
-      // userData: JSON.stringify({ knownSuppliers: ["ABC Supplies Inc.", "Tech Solutions LLC"] }), // Example user data
     };
 
     const extractionOutput: DocumentExtractionOutput = await extractDocumentData(extractionInput);
     
-    const updatePayload: Partial<DocumentMetadata> & { processedAt: FirebaseFirestore.FieldValue, lastUpdatedBy: string } = {
-      ocrText: ocrText, // Store the (mock) OCR text
-      extractedData: extractionOutput as any, // Store the structured data
+    const updatePayload: Partial<DocumentMetadata> & { processedAt: admin.firestore.FieldValue, lastUpdatedBy: string, lastUpdated: admin.firestore.FieldValue } = {
+      ocrText: ocrText,
+      extractedData: extractionOutput as any, 
       extractionConfidence: extractionOutput.confidence?.overall,
-      documentTypeHint: extractionOutput.documentType as DocumentMetadata['documentTypeHint'], // Update hint with AI's finding
+      documentTypeHint: extractionOutput.documentType as DocumentMetadata['documentTypeHint'],
       status: (extractionOutput.confidence?.overall || 0) < 0.7 ? 'pending_review' : 'extraction_complete',
       processedAt: FieldValue.serverTimestamp(),
       lastUpdatedBy: userId,
+      lastUpdated: FieldValue.serverTimestamp(),
     };
     
     let poMatchResult: any = null;
@@ -141,7 +145,6 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       poMatchResult = await findAndMatchPOs(extractionOutput, companyId);
       if (poMatchResult.matchedPoId) {
         updatePayload.linkedPoId = poMatchResult.matchedPoId;
-        // Optionally update the PO's linkedInvoiceId here or during approval
       }
     }
 
@@ -156,9 +159,11 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
   } catch (error: any) {
     console.error(`Error processing document ${documentId}:`, error);
-    await db.collection('documents').doc(documentId).update({ status: 'error', processingError: error.message, lastUpdatedBy: userId }).catch();
+    const dbInstance = getDb(); // Re-get db in case of earlier issues.
+    if(dbInstance) {
+        await dbInstance.collection('documents').doc(documentId).update({ status: 'error', processingError: error.message, lastUpdatedBy: userId, lastUpdated: FieldValue.serverTimestamp() }).catch( e => console.error("Failed to update document to error status:", e));
+    }
     const message = error.message || `Failed to process document ${documentId}.`;
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-

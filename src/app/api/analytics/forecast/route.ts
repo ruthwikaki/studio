@@ -1,12 +1,13 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { db, AdminTimestamp, FieldValue } from '@/lib/firebase/admin';
+import { getDb, AdminTimestamp, FieldValue, isAdminInitialized } from '@/lib/firebase/admin';
 import { verifyAuthToken, withAuth, VerifiedUser } from '@/lib/firebase/admin-auth';
 import { forecastDemand, ForecastDemandInput, ForecastDemandOutput, ModelType } from '@/ai/flows/forecasting';
 import type { SalesHistoryDocument, ForecastDocument, JobQueueDocument, GenerateForecastJobPayload } from '@/lib/types/firestore';
 import { z } from 'zod';
 import { logActivity } from '@/lib/activityLog';
+import { admin } from '@/lib/firebase/admin'; // For admin.firestore.Timestamp
 
 const ModelTypeApiSchema = z.enum([
   "SIMPLE_MOVING_AVERAGE",
@@ -23,8 +24,17 @@ const ForecastRequestSchema = z.object({
   modelType: ModelTypeApiSchema.default("AI_PATTERN_RECOGNITION"),
 });
 
-// This endpoint will now create a job for forecast generation
 export const POST = withAuth(async (request: NextRequest, context: { params: any }, user: VerifiedUser) => {
+  if (!isAdminInitialized()) {
+    console.error("[API Forecast] Firebase Admin SDK not initialized.");
+    return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
+  }
+  const db = getDb();
+  if (!db) {
+    console.error("[API Forecast] Firestore instance not available.");
+    return NextResponse.json({ error: "Server configuration error (no db)." }, { status: 500 });
+  }
+
   const { companyId, uid: userId } = user;
 
   try {
@@ -37,7 +47,6 @@ export const POST = withAuth(async (request: NextRequest, context: { params: any
 
     const { sku, seasonalityFactors, modelType } = validationResult.data;
 
-    // Create a job in the job_queue collection
     const jobRef = db.collection('job_queue').doc();
     const jobPayload: GenerateForecastJobPayload = { sku, seasonalityFactors, modelType: modelType as ModelType };
     
@@ -47,9 +56,9 @@ export const POST = withAuth(async (request: NextRequest, context: { params: any
       jobType: 'generate_forecast',
       payload: jobPayload,
       status: 'pending',
-      createdAt: FieldValue.serverTimestamp() as AdminTimestamp,
-      updatedAt: FieldValue.serverTimestamp() as AdminTimestamp,
-      maxRetries: 3, // Example: allow up to 3 retries
+      createdAt: FieldValue.serverTimestamp() as admin.firestore.Timestamp,
+      updatedAt: FieldValue.serverTimestamp() as admin.firestore.Timestamp,
+      maxRetries: 3,
     };
 
     await jobRef.set(newJob);
@@ -58,19 +67,15 @@ export const POST = withAuth(async (request: NextRequest, context: { params: any
       user,
       actionType: 'forecast_requested',
       resourceType: 'forecast',
-      resourceId: jobRef.id, // Log job ID as resourceId
+      resourceId: jobRef.id,
       description: `Forecast generation requested for SKU ${sku} via job ${jobRef.id}.`,
       details: { sku, modelType, jobId: jobRef.id }
     });
     
-    // Note: Actual forecast generation and saving to 'forecasts' collection
-    // would be handled by a background worker (e.g., Cloud Function)
-    // listening to the 'job_queue'.
-
     return NextResponse.json({ 
         message: `Forecast generation for SKU ${sku} has been queued.`,
         jobId: jobRef.id 
-    }, { status: 202 }); // 202 Accepted: Request accepted for processing
+    }, { status: 202 });
 
   } catch (error: any) {
     console.error('Error queuing forecast generation:', error);

@@ -1,11 +1,12 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { db, AdminTimestamp, FieldValue } from '@/lib/firebase/admin';
+import { getDb, AdminTimestamp, FieldValue, isAdminInitialized } from '@/lib/firebase/admin';
 import { verifyAuthToken } from '@/lib/firebase/admin-auth';
 import { inventoryChat, InventoryChatInput, InventoryChatOutput, ChatContext } from '@/ai/flows/inventoryChat';
 import type { InventoryStockDocument, ChatSessionDocument, ChatMessage as FirestoreChatMessage, OrderDocument, SupplierDocument } from '@/lib/types/firestore';
 import { z } from 'zod';
+import { admin } from '@/lib/firebase/admin'; // For admin.firestore.Timestamp
 
 const ChatRequestSchema = z.object({
   message: z.string().min(1),
@@ -14,6 +15,16 @@ const ChatRequestSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  if (!isAdminInitialized()) {
+    console.error("[API Chat] Firebase Admin SDK not initialized.");
+    return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
+  }
+  const db = getDb();
+  if (!db) {
+    console.error("[API Chat] Firestore instance not available.");
+    return NextResponse.json({ error: "Server configuration error (no db)." }, { status: 500 });
+  }
+
   let companyId: string, userId: string;
   try {
     const authResult = await verifyAuthToken(request);
@@ -35,14 +46,12 @@ export async function POST(request: NextRequest) {
     let currentSessionId = existingSessionId;
     let conversationHistory: FirestoreChatMessage[] = [];
 
-    // --- Build Chat Context ---
     const chatContextData: ChatContext = {};
     let contextSourceDescription = "Live Company Data";
 
     if (inventoryDataOverride) {
         try {
             const overrideData = JSON.parse(inventoryDataOverride) as Partial<InventoryStockDocument>[];
-            // Build summary and low stock from override data
             chatContextData.inventorySummary = {
                 totalItems: overrideData.length,
                 totalValue: overrideData.reduce((sum, item) => sum + (item.quantity || 0) * (item.unitCost || 0), 0),
@@ -56,7 +65,6 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Invalid inventoryDataOverride JSON format.' }, { status: 400 });
         }
     } else {
-        // Fetch live inventory data if no override
         const inventorySnapshot = await db.collection('inventory')
                                           .where('companyId', '==', companyId)
                                           .get();
@@ -75,13 +83,12 @@ export async function POST(request: NextRequest) {
         if (lowStockItems.length > 0) chatContextData.lowStockItems = lowStockItems;
     }
 
-    // Fetch other context regardless of override (orders, suppliers, sales trends)
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const recentOrdersSnapshot = await db.collection('orders')
       .where('companyId', '==', companyId)
       .where('type', '==', 'purchase')
-      .where('orderDate', '>=', AdminTimestamp.fromDate(thirtyDaysAgo))
+      .where('orderDate', '>=', admin.firestore.Timestamp.fromDate(thirtyDaysAgo))
       .get();
 
     let pendingPurchaseOrders = 0;
@@ -105,7 +112,6 @@ export async function POST(request: NextRequest) {
     
     chatContextData.salesTrendsSummary = `Sales trends based on ${contextSourceDescription}. Ask about specific products or overall performance.`;
 
-    // --- Chat History and Session Management ---
     if (currentSessionId) {
       const sessionDocSnap = await db.collection('chat_sessions').doc(currentSessionId).get();
       if (sessionDocSnap.exists) {
@@ -113,7 +119,7 @@ export async function POST(request: NextRequest) {
         if (sessionData.companyId === companyId && sessionData.userId === userId) {
           conversationHistory = sessionData.messages.map(msg => ({
             ...msg,
-            timestamp: (msg.timestamp as AdminTimestamp).toDate() 
+            timestamp: (msg.timestamp as admin.firestore.Timestamp).toDate() 
           }));
         } else {
           currentSessionId = undefined;
@@ -132,8 +138,8 @@ export async function POST(request: NextRequest) {
 
     const aiResult: InventoryChatOutput = await inventoryChat(chatInput);
 
-    const userMessageEntry: FirestoreChatMessage = { role: 'user', content: userQuery, timestamp: FieldValue.serverTimestamp() };
-    const assistantMessageEntry: FirestoreChatMessage = { role: 'assistant', content: aiResult.answer, timestamp: FieldValue.serverTimestamp() };
+    const userMessageEntry: FirestoreChatMessage = { role: 'user', content: userQuery, timestamp: FieldValue.serverTimestamp() as admin.firestore.Timestamp };
+    const assistantMessageEntry: FirestoreChatMessage = { role: 'assistant', content: aiResult.answer, timestamp: FieldValue.serverTimestamp() as admin.firestore.Timestamp };
 
     const contextSnapshotString = JSON.stringify(chatContextData);
 
@@ -142,7 +148,7 @@ export async function POST(request: NextRequest) {
       await sessionRef.update({
         messages: FieldValue.arrayUnion(userMessageEntry, assistantMessageEntry),
         lastMessageAt: FieldValue.serverTimestamp(),
-        contextSnapshot: contextSnapshotString, // Update with the latest context for this turn
+        contextSnapshot: contextSnapshotString,
       });
     } else {
       const newSessionRef = db.collection('chat_sessions').doc();
@@ -169,16 +175,12 @@ export async function POST(request: NextRequest) {
         } 
     });
 
-  } catch (error: any)
-{
+  } catch (error: any) {
     console.error('Error processing chat message:', error);
     const message = error.message || 'Failed to process chat message.';
-    // If it's a ZodError from parsing, provide more specific feedback
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: 'Invalid request payload structure.', details: error.format() }, { status: 400 });
     }
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-
-    

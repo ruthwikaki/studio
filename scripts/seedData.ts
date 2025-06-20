@@ -1,6 +1,6 @@
 
 // scripts/seedData.ts
-import { db, AdminTimestamp, FieldValue, admin } from '../src/lib/firebase/admin'; // Import initialized admin components
+import { getDb, AdminTimestamp, FieldValue, admin, isAdminInitialized } from '../src/lib/firebase/admin'; // Import initialized admin components
 import type { Timestamp as AdminTimestampType } from 'firebase-admin/firestore';
 import type {
   CompanyDocument, UserDocument, ProductDocument, InventoryStockDocument,
@@ -9,10 +9,10 @@ import type {
   DailyAggregateDocument, DiscountTier
 } from '../src/lib/types/firestore';
 
-// --- Project ID Check (for logging purposes only, using the imported admin object) ---
+
 let sdkProjectId: string | undefined;
 
-if (admin.apps.length > 0 && admin.app().options && admin.app().options.projectId) {
+if (isAdminInitialized() && admin.apps.length > 0 && admin.app().options && admin.app().options.projectId) {
     sdkProjectId = admin.app().options.projectId;
     console.log(`[Seed Script] Firebase Admin SDK appears to be initialized by admin.ts. Project ID from SDK: ${sdkProjectId}`);
 
@@ -25,9 +25,9 @@ if (admin.apps.length > 0 && admin.app().options && admin.app().options.projectI
   console.error("[Seed Script] CRITICAL ERROR: Firebase Admin SDK does not seem to be initialized by admin.ts, or project ID is not readable from the SDK instance.");
   if (admin.apps.length === 0) {
     console.error("  Reason: admin.apps.length is 0. The SDK is not initialized.");
-  } else if (!admin.app().options) {
+  } else if (admin.apps.length > 0 && !admin.app().options) {
     console.error("  Reason: admin.app().options is undefined.");
-  } else if (!admin.app().options.projectId) {
+  } else if (admin.apps.length > 0 && admin.app().options && !admin.app().options.projectId) {
     console.error("  Reason: admin.app().options.projectId is undefined/empty.");
   }
   console.error("  This usually means that 'src/lib/firebase/admin.ts' failed to initialize.");
@@ -36,12 +36,11 @@ if (admin.apps.length > 0 && admin.app().options && admin.app().options.projectI
   console.error("--------------------------------------------------------------------");
   process.exit(1);
 }
-// ------------------------------------------------------------------
 
 
 console.log("--- Data Seeding Script for ARIA ---");
 
-const MOCK_COMPANY_ID = 'comp_seed_co_001'; // Standardized ID for Seed Supply Co. using ARIA
+const MOCK_COMPANY_ID = 'comp_seed_co_001';
 const MOCK_USER_ID_OWNER = 'user_owner_seed_001';
 const MOCK_USER_ID_MANAGER = 'user_manager_seed_001';
 const MOCK_PRODUCT_IDS: Record<string, string> = {};
@@ -49,7 +48,7 @@ const STORAGE_BUCKET_NAME = 'aria-jknbu.appspot.com';
 
 const mockCompany: Omit<CompanyDocument, 'id' | 'createdAt'> & { id: string, createdAt: Date } = {
   id: MOCK_COMPANY_ID,
-  name: 'Seed Supply Co.', // Sample company name for the ARIA platform
+  name: 'Seed Supply Co.',
   plan: 'pro',
   createdAt: new Date(),
   settings: { timezone: 'America/New_York', currency: 'USD' },
@@ -344,7 +343,7 @@ const mockChatSessions: (Omit<ChatSessionDocument, 'id' | 'createdAt' | 'lastMes
       messageTime += (msgIndex * 5000);
       return {
           ...rawMsg,
-          timestamp: AdminTimestamp.fromDate(new Date(messageTime))
+          timestamp: admin.firestore.Timestamp.fromDate(new Date(messageTime))
       };
   });
 
@@ -387,6 +386,11 @@ const mockDailyAggregate: Omit<DailyAggregateDocument, 'id' | 'date' | 'lastCalc
 
 
 async function seedDatabase() {
+  const db = getDb();
+  if (!db) {
+    console.error("[Seed Script] CRITICAL: Firestore instance (db) is null. Cannot proceed with Firestore operations. This means admin.ts failed to provide a db instance.");
+    process.exit(1);
+  }
   console.log(`[Seed Script] Using Project ID for Firestore operations: ${sdkProjectId}`);
   if (!sdkProjectId) {
     console.error("[Seed Script] CRITICAL: Project ID is undefined. Cannot proceed with Firestore operations.");
@@ -415,30 +419,30 @@ async function seedDatabase() {
 
   console.log(`Seeding company: ${mockCompany.name} with ID: ${mockCompany.id}`);
   const companyDocRef = db.collection('companies').doc(mockCompany.id);
-  batch.set(companyDocRef, { ...mockCompany, createdAt: AdminTimestamp.fromDate(mockCompany.createdAt) });
+  batch.set(companyDocRef, { ...mockCompany, createdAt: admin.firestore.Timestamp.fromDate(mockCompany.createdAt) });
 
   console.log(`Seeding ${mockUsers.length} users... Each for company ID: ${MOCK_COMPANY_ID}`);
   mockUsers.forEach(user => {
     const userDocRef = db.collection('users').doc(user.uid);
-    batch.set(userDocRef, { ...user, createdAt: AdminTimestamp.fromDate(user.createdAt) });
+    batch.set(userDocRef, { ...user, createdAt: admin.firestore.Timestamp.fromDate(user.createdAt) });
   });
 
   console.log(`Seeding ${mockProducts.length} products... Each for company ID: ${MOCK_COMPANY_ID}`);
   mockProducts.forEach(product => {
     const productDocRef = db.collection('products').doc(product.id);
-    batch.set(productDocRef, { ...product, createdAt: AdminTimestamp.fromDate(product.createdAt), lastUpdated: AdminTimestamp.fromDate(product.lastUpdated), deletedAt: null });
+    batch.set(productDocRef, { ...product, createdAt: admin.firestore.Timestamp.fromDate(product.createdAt), lastUpdated: admin.firestore.Timestamp.fromDate(product.lastUpdated), deletedAt: null });
   });
 
   console.log(`Seeding ${mockInventoryStock.length} inventory stock records... Each for company ID: ${MOCK_COMPANY_ID}`);
   mockInventoryStock.forEach(item => {
     const itemDocRef = db.collection('inventory').doc(item.id);
-    batch.set(itemDocRef, { ...item, createdAt: AdminTimestamp.fromDate(item.createdAt), lastUpdated: AdminTimestamp.fromDate(item.lastUpdated), deletedAt: null });
+    batch.set(itemDocRef, { ...item, createdAt: admin.firestore.Timestamp.fromDate(item.createdAt), lastUpdated: admin.firestore.Timestamp.fromDate(item.lastUpdated), deletedAt: null });
   });
 
   console.log(`Seeding ${mockSuppliers.length} suppliers... Each for company ID: ${MOCK_COMPANY_ID}`);
   mockSuppliers.forEach(supplier => {
     const supplierDocRef = db.collection('suppliers').doc(supplier.id);
-    batch.set(supplierDocRef, { ...supplier, createdAt: AdminTimestamp.fromDate(supplier.createdAt), lastUpdated: AdminTimestamp.fromDate(supplier.lastUpdated), deletedAt: null });
+    batch.set(supplierDocRef, { ...supplier, createdAt: admin.firestore.Timestamp.fromDate(supplier.createdAt), lastUpdated: admin.firestore.Timestamp.fromDate(supplier.lastUpdated), deletedAt: null });
   });
 
   console.log(`Seeding ${mockOrders.length} orders... Each for company ID: ${MOCK_COMPANY_ID}`);
@@ -448,17 +452,17 @@ async function seedDatabase() {
 
     const firestoreOrderData: any = {
       ...restOfOrder,
-      orderDate: AdminTimestamp.fromDate(order.orderDate),
-      createdAt: AdminTimestamp.fromDate(order.createdAt),
-      lastUpdated: AdminTimestamp.fromDate(order.lastUpdated),
+      orderDate: admin.firestore.Timestamp.fromDate(order.orderDate),
+      createdAt: admin.firestore.Timestamp.fromDate(order.createdAt),
+      lastUpdated: admin.firestore.Timestamp.fromDate(order.lastUpdated),
       deletedAt: null,
     };
 
     if (expectedDate) {
-      firestoreOrderData.expectedDate = AdminTimestamp.fromDate(expectedDate);
+      firestoreOrderData.expectedDate = admin.firestore.Timestamp.fromDate(expectedDate);
     }
     if (actualDeliveryDate) {
-      firestoreOrderData.actualDeliveryDate = AdminTimestamp.fromDate(actualDeliveryDate);
+      firestoreOrderData.actualDeliveryDate = admin.firestore.Timestamp.fromDate(actualDeliveryDate);
     }
 
     batch.set(orderDocRef, firestoreOrderData);
@@ -469,7 +473,7 @@ async function seedDatabase() {
     const shDocRef = db.collection('sales_history').doc(sh.id);
     const salesHistoryData = {
       ...sh,
-      date: AdminTimestamp.fromDate(sh.date),
+      date: admin.firestore.Timestamp.fromDate(sh.date),
       orderId: sh.orderId,
       customerId: sh.customerId,
       deletedAt: null
@@ -480,7 +484,7 @@ async function seedDatabase() {
   console.log(`Seeding ${mockForecasts.length} forecasts... Each for company ID: ${MOCK_COMPANY_ID}`);
   mockForecasts.forEach(fc => {
     const fcDocRef = db.collection('forecasts').doc(fc.id);
-    batch.set(fcDocRef, { ...fc, generatedAt: AdminTimestamp.fromDate(fc.generatedAt) });
+    batch.set(fcDocRef, { ...fc, generatedAt: admin.firestore.Timestamp.fromDate(fc.generatedAt) });
   });
 
   console.log(`Seeding ${mockDocuments.length} document metadata entries... Each for company ID: ${MOCK_COMPANY_ID}`);
@@ -490,11 +494,11 @@ async function seedDatabase() {
 
     const firestoreDocumentData: any = {
       ...restOfDoc,
-      uploadedAt: AdminTimestamp.fromDate(doc.uploadedAt),
+      uploadedAt: admin.firestore.Timestamp.fromDate(doc.uploadedAt),
       deletedAt: null,
     };
     if (processedAt) {
-      firestoreDocumentData.processedAt = AdminTimestamp.fromDate(processedAt);
+      firestoreDocumentData.processedAt = admin.firestore.Timestamp.fromDate(processedAt);
     }
     batch.set(docRef, firestoreDocumentData);
   });
@@ -507,9 +511,9 @@ async function seedDatabase() {
         userId: chat.userId,
         title: chat.title,
         contextSnapshot: chat.contextSnapshot,
-        messages: chat.messages,
-        createdAt: AdminTimestamp.fromDate(chat.createdAt),
-        lastMessageAt: AdminTimestamp.fromDate(chat.lastMessageAt)
+        messages: chat.messages, // messages already have Timestamps
+        createdAt: admin.firestore.Timestamp.fromDate(chat.createdAt),
+        lastMessageAt: admin.firestore.Timestamp.fromDate(chat.lastMessageAt)
     });
   });
 
@@ -520,7 +524,7 @@ async function seedDatabase() {
   const aggregateDocRef = db.collection('daily_aggregates').doc(aggregateDocId);
   batch.set(aggregateDocRef, {
     ...mockDailyAggregate,
-    date: AdminTimestamp.fromDate(todayForAggregate),
+    date: admin.firestore.Timestamp.fromDate(todayForAggregate),
     lastCalculated: FieldValue.serverTimestamp(),
   });
 

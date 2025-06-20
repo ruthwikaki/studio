@@ -1,13 +1,24 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { db, FieldValue, AdminTimestamp } from '@/lib/firebase/admin';
+import { getDb, FieldValue, AdminTimestamp, isAdminInitialized } from '@/lib/firebase/admin';
 import { withAuth, VerifiedUser, requireRole } from '@/lib/firebase/admin-auth';
 import type { InventoryStockDocument } from '@/lib/types/firestore';
 import { UpdateInventoryItemSchema } from '@/hooks/useInventory';
 import { logActivity } from '@/lib/activityLog';
+import { admin } from '@/lib/firebase/admin'; // For admin.firestore.Timestamp
 
 export const GET = withAuth(async (request: NextRequest, { params }: { params: { sku: string } }, user: VerifiedUser) => {
+  if (!isAdminInitialized()) {
+    console.error("[API Inventory SKU GET] Firebase Admin SDK not initialized.");
+    return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
+  }
+  const db = getDb();
+  if (!db) {
+    console.error("[API Inventory SKU GET] Firestore instance not available.");
+    return NextResponse.json({ error: "Server configuration error (no db)." }, { status: 500 });
+  }
+
   if (!requireRole(user.role, 'viewer')) {
     return NextResponse.json({ error: 'Access denied.' }, { status: 403 });
   }
@@ -22,7 +33,7 @@ export const GET = withAuth(async (request: NextRequest, { params }: { params: {
     const inventoryQuery = await db.collection('inventory')
                                   .where('companyId', '==', companyId)
                                   .where('sku', '==', sku)
-                                  .where('deletedAt', '==', null) // Check for soft delete
+                                  .where('deletedAt', '==', null)
                                   .limit(1)
                                   .get();
 
@@ -32,12 +43,12 @@ export const GET = withAuth(async (request: NextRequest, { params }: { params: {
 
     const doc = inventoryQuery.docs[0];
     const data = doc.data();
-    // Use select() here if only specific fields are needed for a detail view, for now sending all
     const item: InventoryStockDocument = {
       id: doc.id,
       ...data,
-      lastUpdated: (data.lastUpdated as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
-      createdAt: (data.createdAt as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
+      lastUpdated: (data.lastUpdated as admin.firestore.Timestamp)?.toDate().toISOString(),
+      createdAt: (data.createdAt as admin.firestore.Timestamp)?.toDate().toISOString(),
+      deletedAt: data.deletedAt ? (data.deletedAt as admin.firestore.Timestamp).toDate().toISOString() : undefined,
     } as InventoryStockDocument;
 
     return NextResponse.json({ data: item });
@@ -51,6 +62,16 @@ export const GET = withAuth(async (request: NextRequest, { params }: { params: {
 
 
 export const PUT = withAuth(async (request: NextRequest, { params }: { params: { sku: string } }, user: VerifiedUser) => {
+  if (!isAdminInitialized()) {
+    console.error("[API Inventory SKU PUT] Firebase Admin SDK not initialized.");
+    return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
+  }
+  const db = getDb();
+  if (!db) {
+    console.error("[API Inventory SKU PUT] Firestore instance not available.");
+    return NextResponse.json({ error: "Server configuration error (no db)." }, { status: 500 });
+  }
+
   if (!requireRole(user.role, 'manager')) {
     return NextResponse.json({ error: 'Access denied. Requires manager role or higher.' }, { status: 403 });
   }
@@ -106,8 +127,9 @@ export const PUT = withAuth(async (request: NextRequest, { params }: { params: {
     const updatedItem: InventoryStockDocument = {
       id: updatedDocSnap.id,
       ...updatedData,
-      lastUpdated: (updatedData?.lastUpdated as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
-      createdAt: (updatedData?.createdAt as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
+      lastUpdated: (updatedData?.lastUpdated as admin.firestore.Timestamp)?.toDate().toISOString(),
+      createdAt: (updatedData?.createdAt as admin.firestore.Timestamp)?.toDate().toISOString(),
+      deletedAt: updatedData?.deletedAt ? (updatedData.deletedAt as admin.firestore.Timestamp).toDate().toISOString() : undefined,
     } as InventoryStockDocument;
     
     return NextResponse.json({ data: updatedItem });
@@ -119,8 +141,17 @@ export const PUT = withAuth(async (request: NextRequest, { params }: { params: {
   }
 });
 
-// Implement Soft Delete
 export const DELETE = withAuth(async (request: NextRequest, { params }: { params: { sku: string } }, user: VerifiedUser) => {
+  if (!isAdminInitialized()) {
+    console.error("[API Inventory SKU DELETE] Firebase Admin SDK not initialized.");
+    return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
+  }
+  const db = getDb();
+  if (!db) {
+    console.error("[API Inventory SKU DELETE] Firestore instance not available.");
+    return NextResponse.json({ error: "Server configuration error (no db)." }, { status: 500 });
+  }
+  
   if (!requireRole(user.role, 'admin')) {
     return NextResponse.json({ error: 'Access denied. Requires admin role or higher.' }, { status: 403 });
   }
@@ -135,7 +166,7 @@ export const DELETE = withAuth(async (request: NextRequest, { params }: { params
     const inventoryQuery = await db.collection('inventory')
                                   .where('companyId', '==', companyId)
                                   .where('sku', '==', skuParam)
-                                  .where('deletedAt', '==', null) // Ensure it's not already soft-deleted
+                                  .where('deletedAt', '==', null)
                                   .limit(1)
                                   .get();
     
@@ -146,7 +177,6 @@ export const DELETE = withAuth(async (request: NextRequest, { params }: { params
     const itemDocRef = inventoryQuery.docs[0].ref;
     const itemData = inventoryQuery.docs[0].data() as InventoryStockDocument;
     
-    // Soft delete by setting deletedAt timestamp
     await itemDocRef.update({
       deletedAt: FieldValue.serverTimestamp(),
       lastUpdated: FieldValue.serverTimestamp(),
@@ -155,7 +185,7 @@ export const DELETE = withAuth(async (request: NextRequest, { params }: { params
 
     await logActivity({
         user,
-        actionType: 'item_soft_deleted', // Changed action type
+        actionType: 'item_soft_deleted',
         resourceType: 'inventory',
         resourceId: itemDocRef.id,
         description: `Soft deleted item ${itemData.name} (SKU: ${skuParam}).`,

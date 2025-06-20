@@ -1,12 +1,23 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { db, FieldValue, AdminTimestamp } from '@/lib/firebase/admin';
+import { getDb, FieldValue, AdminTimestamp, isAdminInitialized } from '@/lib/firebase/admin';
 import { verifyAuthToken } from '@/lib/firebase/admin-auth';
 import type { SupplierDocument, SupplierProductInfo } from '@/lib/types/firestore';
 import { UpdateSupplierSchema } from '@/hooks/useSuppliers';
+import { admin } from '@/lib/firebase/admin'; // For admin.firestore.Timestamp
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+  if (!isAdminInitialized()) {
+    console.error("[API Supplier Detail GET] Firebase Admin SDK not initialized.");
+    return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
+  }
+  const db = getDb();
+  if (!db) {
+    console.error("[API Supplier Detail GET] Firestore instance not available.");
+    return NextResponse.json({ error: "Server configuration error (no db)." }, { status: 500 });
+  }
+
   let companyId: string;
   try {
     ({ companyId } = await verifyAuthToken(request));
@@ -36,9 +47,10 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     const supplierResponse = {
       id: docSnap.id,
       ...supplierData,
-      createdAt: (supplierData.createdAt as AdminTimestamp)?.toDate().toISOString(),
-      lastUpdated: (supplierData.lastUpdated as AdminTimestamp)?.toDate().toISOString(),
-      lastOrderDate: (supplierData.lastOrderDate as AdminTimestamp)?.toDate().toISOString(),
+      createdAt: (supplierData.createdAt as admin.firestore.Timestamp)?.toDate().toISOString(),
+      lastUpdated: (supplierData.lastUpdated as admin.firestore.Timestamp)?.toDate().toISOString(),
+      lastOrderDate: supplierData.lastOrderDate ? (supplierData.lastOrderDate as admin.firestore.Timestamp).toDate().toISOString() : undefined,
+      deletedAt: supplierData.deletedAt ? (supplierData.deletedAt as admin.firestore.Timestamp).toDate().toISOString() : undefined,
     } as SupplierDocument;
 
     return NextResponse.json({ data: supplierResponse });
@@ -50,6 +62,16 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+  if (!isAdminInitialized()) {
+    console.error("[API Supplier Detail PUT] Firebase Admin SDK not initialized.");
+    return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
+  }
+  const db = getDb();
+  if (!db) {
+    console.error("[API Supplier Detail PUT] Firestore instance not available.");
+    return NextResponse.json({ error: "Server configuration error (no db)." }, { status: 500 });
+  }
+
   let companyId: string, userId: string;
   try {
     const authResult = await verifyAuthToken(request);
@@ -91,7 +113,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         lastUpdatedBy: userId, 
     };
 
-    if (productsSuppliedSkus !== undefined) { // Check if it was actually provided in payload
+    if (productsSuppliedSkus !== undefined) {
         finalUpdateData.productsSupplied = (productsSuppliedSkus || []).map((sku: string) => ({
             productId: sku, sku: sku, name: `Product ${sku}`, // Placeholder name
         }));
@@ -105,9 +127,10 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     const updatedSupplierResponse = { 
       id: updatedDoc.id, 
       ...updatedData,
-      createdAt: (updatedData?.createdAt as AdminTimestamp)?.toDate().toISOString(),
-      lastUpdated: (updatedData?.lastUpdated as AdminTimestamp)?.toDate().toISOString(),
-      lastOrderDate: (updatedData?.lastOrderDate as AdminTimestamp)?.toDate().toISOString(),
+      createdAt: (updatedData?.createdAt as admin.firestore.Timestamp)?.toDate().toISOString(),
+      lastUpdated: (updatedData?.lastUpdated as admin.firestore.Timestamp)?.toDate().toISOString(),
+      lastOrderDate: updatedData?.lastOrderDate ? (updatedData.lastOrderDate as admin.firestore.Timestamp).toDate().toISOString() : undefined,
+      deletedAt: updatedData?.deletedAt ? (updatedData.deletedAt as admin.firestore.Timestamp).toDate().toISOString() : undefined,
     } as SupplierDocument;
 
     return NextResponse.json({ data: updatedSupplierResponse });
@@ -118,6 +141,3 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-
-// Placeholder for DELETE if needed
-// export async function DELETE(request: NextRequest, { params }: { params: { id: string }}) {}

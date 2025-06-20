@@ -1,11 +1,22 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { db, AdminTimestamp } from '@/lib/firebase/admin';
+import { getDb, AdminTimestamp, isAdminInitialized } from '@/lib/firebase/admin';
 import { verifyAuthToken } from '@/lib/firebase/admin-auth';
 import type { DocumentMetadata, DocumentStatus } from '@/lib/types/firestore';
+import { admin } from '@/lib/firebase/admin'; // For admin.firestore.Timestamp
 
 export async function GET(request: NextRequest) {
+  if (!isAdminInitialized()) {
+    console.error("[API Documents List] Firebase Admin SDK not initialized.");
+    return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
+  }
+  const db = getDb();
+  if (!db) {
+    console.error("[API Documents List] Firestore instance not available.");
+    return NextResponse.json({ error: "Server configuration error (no db)." }, { status: 500 });
+  }
+
   let companyId: string;
   try {
     ({ companyId } = await verifyAuthToken(request));
@@ -15,11 +26,11 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const limit = parseInt(searchParams.get('limit') || '10');
-  const startAfterDocId = searchParams.get('startAfter'); // For cursor-based pagination
+  const startAfterDocId = searchParams.get('startAfter');
   const type = searchParams.get('type') as DocumentMetadata['documentTypeHint'];
   const status = searchParams.get('status') as DocumentStatus;
-  const dateFrom = searchParams.get('dateFrom'); // ISO string
-  const dateTo = searchParams.get('dateTo');     // ISO string
+  const dateFrom = searchParams.get('dateFrom');
+  const dateTo = searchParams.get('dateTo');
   const searchQuery = searchParams.get('search');
 
   try {
@@ -32,12 +43,12 @@ export async function GET(request: NextRequest) {
       query = query.where('status', '==', status);
     }
     if (dateFrom) {
-      query = query.where('uploadedAt', '>=', AdminTimestamp.fromDate(new Date(dateFrom)));
+      query = query.where('uploadedAt', '>=', admin.firestore.Timestamp.fromDate(new Date(dateFrom)));
     }
     if (dateTo) {
       const toDateObj = new Date(dateTo);
       toDateObj.setHours(23, 59, 59, 999);
-      query = query.where('uploadedAt', '<=', AdminTimestamp.fromDate(toDateObj));
+      query = query.where('uploadedAt', '<=', admin.firestore.Timestamp.fromDate(toDateObj));
     }
     
     if (searchQuery) {
@@ -63,9 +74,9 @@ export async function GET(request: NextRequest) {
         fileType: data.fileType,
         status: data.status,
         documentTypeHint: data.documentTypeHint,
-        uploadedAt: (data.uploadedAt as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
-        processedAt: data.processedAt ? (data.processedAt as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined,
-        approvedAt: data.approvedAt ? (data.approvedAt as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined,
+        uploadedAt: (data.uploadedAt as admin.firestore.Timestamp)?.toDate().toISOString(),
+        processedAt: data.processedAt ? (data.processedAt as admin.firestore.Timestamp).toDate().toISOString() : undefined,
+        approvedAt: data.approvedAt ? (data.approvedAt as admin.firestore.Timestamp).toDate().toISOString() : undefined,
         extractedDataSummary: data.extractedData ? 
             `Type: ${data.extractedData.documentType || 'N/A'}, Ref: ${data.extractedData.invoiceNumber || data.extractedData.poNumber || data.extractedData.transactionId || 'N/A'}, Total: ${data.extractedData.totalAmount || 'N/A'}` 
             : "Not Extracted",

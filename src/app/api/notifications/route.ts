@@ -2,20 +2,30 @@
 // src/app/api/notifications/route.ts
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { db, AdminTimestamp } from '@/lib/firebase/admin';
+import { getDb, AdminTimestamp, isAdminInitialized } from '@/lib/firebase/admin';
 import { withAuth, VerifiedUser } from '@/lib/firebase/admin-auth';
 import type { NotificationDocument } from '@/lib/types/firestore';
+import { admin } from '@/lib/firebase/admin'; // For admin.firestore.Timestamp
 
 const DEFAULT_PAGE_SIZE = 15;
 
-// GET all notifications for the user (paginated)
 export const GET = withAuth(async (request: NextRequest, context: { params: any }, user: VerifiedUser) => {
+  if (!isAdminInitialized()) {
+    console.error("[API Notifications List] Firebase Admin SDK not initialized.");
+    return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
+  }
+  const db = getDb();
+  if (!db) {
+    console.error("[API Notifications List] Firestore instance not available.");
+    return NextResponse.json({ error: "Server configuration error (no db)." }, { status: 500 });
+  }
+
   const { companyId, uid: userId } = user;
 
   const { searchParams } = new URL(request.url);
   const limit = parseInt(searchParams.get('limit') || `${DEFAULT_PAGE_SIZE}`);
-  const startAfterDocId = searchParams.get('startAfterDocId'); // For cursor-based pagination
-  const filterRead = searchParams.get('isRead'); // 'true', 'false', or undefined for all
+  const startAfterDocId = searchParams.get('startAfterDocId');
+  const filterRead = searchParams.get('isRead');
 
   try {
     let query = db.collection('notifications')
@@ -44,7 +54,7 @@ export const GET = withAuth(async (request: NextRequest, context: { params: any 
       return {
         id: doc.id,
         ...data,
-        createdAt: (data.createdAt as FirebaseFirestore.Timestamp).toDate().toISOString(),
+        createdAt: (data.createdAt as admin.firestore.Timestamp).toDate().toISOString(),
       } as NotificationDocument;
     });
 

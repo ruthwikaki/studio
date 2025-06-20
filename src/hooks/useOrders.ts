@@ -17,7 +17,7 @@ const fetchReorderSuggestions = async (): Promise<OptimizeReordersOutput> => {
     throw new Error(errorData.error || 'Failed to fetch reorder suggestions');
   }
   const result = await response.json();
-  return result.data; // Assuming API wraps Genkit output in { data: ... }
+  return result.data;
 };
 
 export function useReorderSuggestions() {
@@ -27,8 +27,15 @@ export function useReorderSuggestions() {
   });
 }
 
+interface CreatePOItemPayload {
+  sku: string;
+  name: string;
+  productId: string;
+  quantity: number;
+  unitPrice: number; // Cost from supplier for this item
+}
 interface CreatePOPayload {
-  items: { sku: string; name: string; productId: string; quantity: number; unitCost: number }[];
+  items: CreatePOItemPayload[];
   supplierId?: string;
   notes?: string;
 }
@@ -44,7 +51,7 @@ const createPurchaseOrder = async (payload: CreatePOPayload): Promise<OrderDocum
     throw new Error(errorData.error || 'Failed to create purchase order');
   }
   const result = await response.json();
-  return result.data; // Assuming API wraps response in { data: ... }
+  return result.data;
 };
 
 export function useCreatePurchaseOrder() {
@@ -55,7 +62,7 @@ export function useCreatePurchaseOrder() {
     mutationFn: createPurchaseOrder,
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [ORDERS_QUERY_KEY] });
-      queryClient.invalidateQueries({ queryKey: ['inventoryItems'] }); // Invalidate inventory as PO might affect stock
+      queryClient.invalidateQueries({ queryKey: ['inventoryItems'] });
       toast({ title: 'Success', description: `Purchase Order ${data.orderNumber} created.` });
     },
     onError: (error) => {
@@ -63,6 +70,3 @@ export function useCreatePurchaseOrder() {
     },
   });
 }
-
-// Placeholder for fetching order history
-// export function useOrderHistory() { ... }

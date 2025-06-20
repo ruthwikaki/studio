@@ -2,12 +2,21 @@
 // src/app/api/notifications/[id]/read/route.ts
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/firebase/admin';
+import { getDb, isAdminInitialized } from '@/lib/firebase/admin';
 import { withAuth, VerifiedUser, requireRole } from '@/lib/firebase/admin-auth';
 import type { NotificationDocument } from '@/lib/types/firestore';
 
-// PUT to mark a single notification as read
 export const PUT = withAuth(async (request: NextRequest, { params }: { params: { id: string } }, user: VerifiedUser) => {
+  if (!isAdminInitialized()) {
+    console.error("[API Notif Read] Firebase Admin SDK not initialized.");
+    return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
+  }
+  const db = getDb();
+  if (!db) {
+    console.error("[API Notif Read] Firestore instance not available.");
+    return NextResponse.json({ error: "Server configuration error (no db)." }, { status: 500 });
+  }
+
   const { companyId, uid: userId } = user;
   const notificationId = params.id;
 

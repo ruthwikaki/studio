@@ -1,12 +1,23 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { db, FieldValue, AdminTimestamp } from '@/lib/firebase/admin';
+import { getDb, FieldValue, AdminTimestamp, isAdminInitialized } from '@/lib/firebase/admin';
 import { verifyAuthToken } from '@/lib/firebase/admin-auth';
 import type { SupplierDocument, SupplierProductInfo } from '@/lib/types/firestore';
-import { CreateSupplierSchema } from '@/hooks/useSuppliers'; // Using Zod schema from hook for validation
+import { CreateSupplierSchema } from '@/hooks/useSuppliers';
+import { admin } from '@/lib/firebase/admin'; // For admin.firestore.Timestamp
 
 export async function GET(request: NextRequest) {
+  if (!isAdminInitialized()) {
+    console.error("[API Suppliers List] Firebase Admin SDK not initialized.");
+    return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
+  }
+  const db = getDb();
+  if (!db) {
+    console.error("[API Suppliers List] Firestore instance not available.");
+    return NextResponse.json({ error: "Server configuration error (no db)." }, { status: 500 });
+  }
+
   let companyId: string;
   try {
     ({ companyId } = await verifyAuthToken(request));
@@ -40,21 +51,19 @@ export async function GET(request: NextRequest) {
     }
 
     if (leadTimeFilter && leadTimeFilter !== 'all') {
-      const [minLeadStr, maxLeadPlusStr] = leadTimeFilter.split('-'); // e.g., "15+" -> minLead=15, maxLeadPlusStr="+"
+      const [minLeadStr, maxLeadPlusStr] = leadTimeFilter.split('-');
       const minLead = parseInt(minLeadStr, 10);
       const maxLead = parseInt(maxLeadPlusStr, 10); 
 
       if (!isNaN(minLead)) query = query.where('leadTimeDays', '>=', minLead);
       if (!isNaN(maxLead)) { 
         query = query.where('leadTimeDays', '<=', maxLead);
-      } else if (maxLeadPlusStr === '+') { // Handle "15+" case
-        // No upper bound for leadTimeDays if it's a "plus" scenario like "15+"
       }
       if (!searchTerm && !reliabilityFilter) query = query.orderBy('leadTimeDays');
     }
     
     if (!searchTerm && !(reliabilityFilter && reliabilityFilter !== 'all') && !(leadTimeFilter && leadTimeFilter !== 'all')) {
-        query = query.orderBy('name'); // Default sort if no other sort-defining filter is active
+        query = query.orderBy('name');
     }
 
     if (startAfterDocId) {
@@ -71,9 +80,10 @@ export async function GET(request: NextRequest) {
       return {
         id: doc.id,
         ...data,
-        createdAt: (data.createdAt as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
-        lastUpdated: (data.lastUpdated as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
-        lastOrderDate: data.lastOrderDate ? (data.lastOrderDate as FirebaseFirestore.Timestamp).toDate().toISOString() : undefined,
+        createdAt: (data.createdAt as admin.firestore.Timestamp)?.toDate().toISOString(),
+        lastUpdated: (data.lastUpdated as admin.firestore.Timestamp)?.toDate().toISOString(),
+        lastOrderDate: data.lastOrderDate ? (data.lastOrderDate as admin.firestore.Timestamp).toDate().toISOString() : undefined,
+        deletedAt: data.deletedAt ? (data.deletedAt as admin.firestore.Timestamp).toDate().toISOString() : undefined,
       } as SupplierDocument;
     });
     
@@ -101,6 +111,16 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  if (!isAdminInitialized()) {
+    console.error("[API Suppliers Create] Firebase Admin SDK not initialized.");
+    return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
+  }
+  const db = getDb();
+  if (!db) {
+    console.error("[API Suppliers Create] Firestore instance not available.");
+    return NextResponse.json({ error: "Server configuration error (no db)." }, { status: 500 });
+  }
+
   let companyId: string, userId: string;
   try {
     const authResult = await verifyAuthToken(request);
@@ -121,9 +141,7 @@ export async function POST(request: NextRequest) {
     const { productsSuppliedSkus, ...newSupplierData } = validationResult.data;
     
     const productsSupplied: SupplierProductInfo[] = (productsSuppliedSkus || []).map(sku => ({
-        productId: sku, 
-        sku: sku,
-        name: `Product ${sku}`, // Placeholder, ideally fetch actual product name if available
+        productId: sku, sku: sku, name: `Product ${sku}`, 
     }));
 
     const supplierDocRef = db.collection('suppliers').doc();
@@ -138,7 +156,6 @@ export async function POST(request: NextRequest) {
       productsSupplied: productsSupplied,
       createdAt: FieldValue.serverTimestamp(),
       lastUpdated: FieldValue.serverTimestamp(),
-      // Ensure all optional fields from schema are handled
       email: newSupplierData.email || undefined,
       phone: newSupplierData.phone || undefined,
       address: newSupplierData.address || undefined,
@@ -154,10 +171,9 @@ export async function POST(request: NextRequest) {
     const responseSupplier = {
       id: createdDoc.id,
       ...createdData,
-      createdAt: (createdData?.createdAt as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
-      lastUpdated: (createdData?.lastUpdated as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
+      createdAt: (createdData?.createdAt as admin.firestore.Timestamp)?.toDate().toISOString(),
+      lastUpdated: (createdData?.lastUpdated as admin.firestore.Timestamp)?.toDate().toISOString(),
     } as SupplierDocument;
-
 
     return NextResponse.json({ data: responseSupplier, message: 'Supplier created successfully.' }, { status: 201 });
 

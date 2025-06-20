@@ -1,7 +1,7 @@
 
 'use server';
 
-import { db, FieldValue } from '@/lib/firebase/admin';
+import { getDb, FieldValue, isAdminInitialized } from '@/lib/firebase/admin';
 import { verifyAuthTokenOnServerAction } from '@/lib/firebase/admin-auth';
 import type { InventoryStockDocument } from '@/lib/types/firestore';
 import { revalidatePath } from 'next/cache';
@@ -14,6 +14,13 @@ interface ActionResult<T = null> {
 }
 
 export async function quickUpdateQuantity(sku: string, newQuantity: number): Promise<ActionResult> {
+  if (!isAdminInitialized()) {
+    return { success: false, error: "Server configuration error (Admin SDK not initialized)." };
+  }
+  const db = getDb();
+  if (!db) {
+    return { success: false, error: "Server configuration error (Firestore not available)." };
+  }
   try {
     const { companyId, uid } = await verifyAuthTokenOnServerAction();
     if (newQuantity < 0) {
@@ -46,12 +53,19 @@ export async function quickUpdateQuantity(sku: string, newQuantity: number): Pro
 }
 
 export async function bulkUpdateItems(updates: { sku: string; data: Partial<Omit<InventoryStockDocument, 'id' | 'companyId' | 'lastUpdated' | 'createdAt' | 'createdBy' | 'lastUpdatedBy'>> }[]): Promise<ActionResult> {
+  if (!isAdminInitialized()) {
+    return { success: false, error: "Server configuration error (Admin SDK not initialized)." };
+  }
+  const db = getDb();
+  if (!db) {
+    return { success: false, error: "Server configuration error (Firestore not available)." };
+  }
   try {
     const { companyId, uid } = await verifyAuthTokenOnServerAction();
     if (!updates || updates.length === 0) {
       return { success: false, error: 'No updates provided.' };
     }
-    if (updates.length > 500) { // Firestore batch limit
+    if (updates.length > 500) {
         return { success: false, error: 'Too many items to update at once (max 500).' };
     }
 
@@ -78,7 +92,6 @@ export async function bulkUpdateItems(updates: { sku: string; data: Partial<Omit
     
     if (notFoundSkus.length > 0) {
         console.warn(`Bulk update: SKUs not found for company ${companyId}: ${notFoundSkus.join(', ')}`);
-        // Optionally, return this information in the 'details' field of ActionResult
     }
     
     await batch.commit();
@@ -92,6 +105,13 @@ export async function bulkUpdateItems(updates: { sku: string; data: Partial<Omit
 }
 
 export async function deleteItems(skus: string[]): Promise<ActionResult> {
+  if (!isAdminInitialized()) {
+    return { success: false, error: "Server configuration error (Admin SDK not initialized)." };
+  }
+  const db = getDb();
+  if (!db) {
+    return { success: false, error: "Server configuration error (Firestore not available)." };
+  }
   try {
     const { companyId } = await verifyAuthTokenOnServerAction();
     if (!skus || skus.length === 0) {
@@ -112,7 +132,7 @@ export async function deleteItems(skus: string[]): Promise<ActionResult> {
                                      .get();
       if (!inventoryQuery.empty) {
         const itemRef = inventoryQuery.docs[0].ref;
-        batch.delete(itemRef);
+        batch.delete(itemRef); // This is a hard delete. Soft delete would be itemRef.update({ deletedAt: FieldValue.serverTimestamp() })
       } else {
         notFoundSkus.push(sku);
       }
@@ -131,4 +151,3 @@ export async function deleteItems(skus: string[]): Promise<ActionResult> {
     return { success: false, error: e.message || 'Failed to delete items.' };
   }
 }
-    

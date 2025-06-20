@@ -1,21 +1,20 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { db, FieldValue, AdminTimestamp } from '@/lib/firebase/admin';
+import { getDb, FieldValue, AdminTimestamp, isAdminInitialized } from '@/lib/firebase/admin';
 import { verifyAuthToken } from '@/lib/firebase/admin-auth';
 import type { DocumentMetadata, OrderDocument, InvoiceData, PurchaseOrderData, POInvoiceMatchDocument, POInvoiceMatchDiscrepancy } from '@/lib/types/firestore';
 import { z } from 'zod';
+import { admin } from '@/lib/firebase/admin'; // For admin.firestore.Timestamp
 
 const MatchRequestSchema = z.object({
   invoiceDocumentId: z.string().min(1, "Invoice Document ID is required"),
-  poDocumentId: z.string().optional(), // If PO is also a document
-  poOrderId: z.string().optional(), // If PO is an OrderDocument
+  poDocumentId: z.string().optional(),
+  poOrderId: z.string().optional(),
 }).refine(data => data.poDocumentId || data.poOrderId, {
   message: "Either PO Document ID or PO Order ID must be provided",
 });
 
-
-// Simplified matching logic
 function calculatePOInvoiceMatch(
     invoiceMeta: DocumentMetadata, 
     poMeta?: DocumentMetadata, 
@@ -31,25 +30,19 @@ function calculatePOInvoiceMatch(
         return { score: 0, discrepancies };
     }
 
-    // 1. Supplier/Vendor Match (Simplified)
     const invoiceVendor = invoiceData.vendorDetails?.name?.toLowerCase().trim();
     let poSupplierName: string | undefined;
     if (poMeta?.extractedData?.documentType === 'purchase_order') {
         poSupplierName = (poMeta.extractedData as PurchaseOrderData).supplierDetails?.name?.toLowerCase().trim();
-    } else if (poOrder?.type === 'purchase') {
-        // Need to fetch supplier name from poOrder.supplierId if only OrderDocument is provided
-        // For simplicity, we'll assume if poOrder is given, supplier name might need to be matched manually or is less critical for this simple calc
     }
 
     if (invoiceVendor && poSupplierName && invoiceVendor === poSupplierName) {
         score += 20;
     } else if (invoiceVendor && poSupplierName) {
         discrepancies.push({ field: 'supplierName', poValue: poSupplierName, invoiceValue: invoiceVendor, difference: 'Supplier names do not match exactly.'});
-        score += 5; // Partial for any name present
+        score += 5;
     }
 
-
-    // 2. Total Amount Match (within 5% tolerance)
     const invoiceTotal = invoiceData.totalAmount;
     const poTotal = (poMeta?.extractedData as PurchaseOrderData)?.totalAmount ?? poOrder?.totalAmount;
 
@@ -60,13 +53,12 @@ function calculatePOInvoiceMatch(
             score += 50;
         } else {
             discrepancies.push({ field: 'totalAmount', poValue: poTotal, invoiceValue: invoiceTotal, difference: `Total amounts differ by more than 5%. Diff: ${difference.toFixed(2)}`});
-            score += 10; // Some score for having totals
+            score += 10;
         }
     } else {
          discrepancies.push({ field: 'totalAmount', poValue: poTotal, invoiceValue: invoiceTotal, difference: 'Missing total amount on one or both documents.'});
     }
 
-    // 3. Line Item Count (Very basic check)
     const invoiceItemsCount = invoiceData.lineItems?.length || 0;
     const poItemsCount = (poMeta?.extractedData as PurchaseOrderData)?.items?.length || poOrder?.items?.length || 0;
     if (invoiceItemsCount > 0 && poItemsCount > 0) {
@@ -75,16 +67,21 @@ function calculatePOInvoiceMatch(
             discrepancies.push({ field: 'lineItemCount', poValue: poItemsCount, invoiceValue: invoiceItemsCount, difference: 'Number of line items differs.'});
         }
     }
-
-
-    // TODO: More detailed line item comparison (SKU, quantity, unit price)
-    // For each PO item, try to find a match in invoice items. Score based on matches.
-
     return { score: Math.min(100, Math.round(score)), discrepancies };
 }
 
 
 export async function POST(request: NextRequest) {
+  if (!isAdminInitialized()) {
+    console.error("[API Match PO] Firebase Admin SDK not initialized.");
+    return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
+  }
+  const db = getDb();
+  if (!db) {
+    console.error("[API Match PO] Firestore instance not available.");
+    return NextResponse.json({ error: "Server configuration error (no db)." }, { status: 500 });
+  }
+
   let companyId: string, userId: string;
   try {
     const authResult = await verifyAuthToken(request);
@@ -103,7 +100,6 @@ export async function POST(request: NextRequest) {
     }
     const { invoiceDocumentId, poDocumentId, poOrderId } = validationResult.data;
 
-    // Fetch Invoice Document
     const invoiceDocRef = db.collection('documents').doc(invoiceDocumentId);
     const invoiceDocSnap = await invoiceDocRef.get();
     if (!invoiceDocSnap.exists || (invoiceDocSnap.data() as DocumentMetadata).companyId !== companyId) {
@@ -114,7 +110,6 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Specified document is not an invoice.' }, { status: 400 });
     }
 
-    // Fetch PO (either as DocumentMetadata or OrderDocument)
     let poMetadata: DocumentMetadata | undefined;
     let poOrderData: OrderDocument | undefined;
 
@@ -150,25 +145,21 @@ export async function POST(request: NextRequest) {
     const newMatchData: Omit<POInvoiceMatchDocument, 'id'> = {
         companyId,
         invoiceId: invoiceDocumentId,
-        poId: poDocumentId || poOrderId!, // Use the one that's available
+        poId: poDocumentId || poOrderId!,
         matchScore: score,
-        matchDate: FieldValue.serverTimestamp() as AdminTimestamp,
-        matchedBy: 'user_manual', // This endpoint is for manual trigger
+        matchDate: FieldValue.serverTimestamp() as admin.firestore.Timestamp,
+        matchedBy: 'user_manual',
         discrepancies,
-        status: score >= 75 ? 'approved' : 'pending_review', // Auto-approve if score is high
+        status: score >= 75 ? 'approved' : 'pending_review',
     };
     await matchRef.set(newMatchData);
 
-    // Link documents
-    const batch = db.batch();
-    batch.update(invoiceDocRef, { linkedPoId: poDocumentId || poOrderId, lastUpdatedBy: userId, lastUpdated: FieldValue.serverTimestamp() });
+    const batchWrite = db.batch();
+    batchWrite.update(invoiceDocRef, { linkedPoId: poDocumentId || poOrderId, lastUpdatedBy: userId, lastUpdated: FieldValue.serverTimestamp() });
     if (poDocumentId) {
-      batch.update(db.collection('documents').doc(poDocumentId), { linkedInvoiceId: invoiceDocumentId, lastUpdatedBy: userId, lastUpdated: FieldValue.serverTimestamp() });
-    } else if (poOrderId) {
-      // Potentially update OrderDocument as well, if it needs a link back.
-      // For now, linking is primarily on the DocumentMetadata
+      batchWrite.update(db.collection('documents').doc(poDocumentId), { linkedInvoiceId: invoiceDocumentId, lastUpdatedBy: userId, lastUpdated: FieldValue.serverTimestamp() });
     }
-    await batch.commit();
+    await batchWrite.commit();
 
     return NextResponse.json({ 
         message: 'PO and Invoice matched successfully.', 

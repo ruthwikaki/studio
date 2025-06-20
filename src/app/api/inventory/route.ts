@@ -1,15 +1,26 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { db, AdminTimestamp, FieldValue } from '@/lib/firebase/admin';
+import { getDb, AdminTimestamp, FieldValue, isAdminInitialized } from '@/lib/firebase/admin';
 import { withAuth, VerifiedUser, requireRole } from '@/lib/firebase/admin-auth';
 import type { InventoryStockDocument } from '@/lib/types/firestore';
 import { logActivity } from '@/lib/activityLog';
 import { CreateInventoryItemSchema } from '@/hooks/useInventory';
+import { admin } from '@/lib/firebase/admin'; // For admin.firestore.Timestamp
 
 
 export const GET = withAuth(async (request: NextRequest, context: { params: any }, user: VerifiedUser) => {
-  console.log('[API /inventory GET] Request received.');
+  if (!isAdminInitialized()) {
+    console.error("[API /inventory GET] Firebase Admin SDK not initialized.");
+    return NextResponse.json({ error: "Server configuration error (Admin SDK)." }, { status: 500 });
+  }
+  const db = getDb();
+  if (!db) {
+    console.error("[API /inventory GET] Firestore instance not available.");
+    return NextResponse.json({ error: "Server configuration error (no db)." }, { status: 500 });
+  }
+
+  console.log('[API /inventory GET] Request received by handler.');
   if (!requireRole(user.role, 'viewer')) {
     console.warn(`[API /inventory GET] Authorization failed. User role '${user.role}' does not meet minimum 'viewer'.`);
     return NextResponse.json({ error: 'Access denied.' }, { status: 403 });
@@ -37,15 +48,10 @@ export const GET = withAuth(async (request: NextRequest, context: { params: any 
       query = query.where('category', '==', category);
     }
     
-    // Firestore query construction needs careful ordering of orderBy and where clauses.
-    // If searchQuery is present, we typically want to order by the field we're searching on (e.g., sku or name).
-    // For simplicity, if searchQuery is present, we'll order by SKU and assume search is on SKU.
-    // More complex search would require more advanced indexing or a dedicated search service.
     if (searchQuery) {
       console.log(`[API /inventory GET] Applying search query: ${searchQuery} (on SKU)`);
       query = query.orderBy('sku').startAt(searchQuery).endAt(searchQuery + '\uf8ff');
     } else {
-      // Default sort order if no search query
       query = query.orderBy('sku'); 
     }
     
@@ -73,8 +79,8 @@ export const GET = withAuth(async (request: NextRequest, context: { params: any 
         reorderPoint: data.reorderPoint,
         category: data.category,
         imageUrl: data.imageUrl,
-        lastUpdated: (data.lastUpdated as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
-        createdAt: (data.createdAt as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
+        lastUpdated: (data.lastUpdated as admin.firestore.Timestamp)?.toDate().toISOString(),
+        createdAt: (data.createdAt as admin.firestore.Timestamp)?.toDate().toISOString(),
       };
 
       if (fieldsParam) {
@@ -85,7 +91,6 @@ export const GET = withAuth(async (request: NextRequest, context: { params: any 
             (selectedItem as any)[field] = data[field];
           }
         });
-        // Ensure essential fields are present if requested specific fields
         if (!selectedItem.sku && data.sku) selectedItem.sku = data.sku;
         if (!selectedItem.name && data.name) selectedItem.name = data.name;
         if (selectedItem.quantity === undefined && data.quantity !== undefined) selectedItem.quantity = data.quantity;
@@ -95,13 +100,10 @@ export const GET = withAuth(async (request: NextRequest, context: { params: any 
       return itemBase;
     });
 
-    // Low stock filtering is done client-side in the hook if not handled by API query directly
-    // This is because Firestore cannot directly compare two fields (quantity <= reorderPoint)
     if (lowStockOnly) {
       console.log(`[API /inventory GET] Applying lowStockOnly filter client-side (API part)`);
       items = items.filter(item => item.quantity !== undefined && item.reorderPoint !== undefined && item.reorderPoint > 0 && item.quantity <= item.reorderPoint);
     }
-    // Search query filtering (name contains) is also better done client-side if not covered by SKU prefix search
      if (searchQuery && !fieldsParam && !category) { 
         console.log(`[API /inventory GET] Applying additional client-side search filter for name on ${items.length} items.`);
         const lowerSearchQuery = searchQuery.toLowerCase();
@@ -138,6 +140,16 @@ export const GET = withAuth(async (request: NextRequest, context: { params: any 
 
 
 export const POST = withAuth(async (request: NextRequest, context: { params: any }, user: VerifiedUser) => {
+  if (!isAdminInitialized()) {
+    console.error("[API /inventory POST] Firebase Admin SDK not initialized.");
+    return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
+  }
+  const db = getDb();
+  if (!db) {
+    console.error("[API /inventory POST] Firestore instance not available.");
+    return NextResponse.json({ error: "Server configuration error (no db)." }, { status: 500 });
+  }
+
   if (!requireRole(user.role, 'manager')) {
     return NextResponse.json({ error: 'Access denied. Requires manager role or higher.' }, { status: 403 });
   }
@@ -169,10 +181,9 @@ export const POST = withAuth(async (request: NextRequest, context: { params: any
       productId: itemData.sku, 
       createdBy: uid,
       lastUpdatedBy: uid,
-      lastUpdated: FieldValue.serverTimestamp() as FirebaseFirestore.Timestamp,
-      createdAt: FieldValue.serverTimestamp() as FirebaseFirestore.Timestamp,
+      lastUpdated: FieldValue.serverTimestamp() as admin.firestore.Timestamp,
+      createdAt: FieldValue.serverTimestamp() as admin.firestore.Timestamp,
       lowStockAlertSent: false,
-      // Ensure all optional fields from schema have a default if not provided
       description: itemData.description || undefined,
       reorderQuantity: itemData.reorderQuantity || undefined,
       location: itemData.location || undefined,
@@ -196,8 +207,9 @@ export const POST = withAuth(async (request: NextRequest, context: { params: any
     const createdItem: InventoryStockDocument = { 
         id: createdDocSnap.id, 
         ...createdData,
-        lastUpdated: (createdData?.lastUpdated as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
-        createdAt: (createdData?.createdAt as FirebaseFirestore.Timestamp)?.toDate().toISOString(),
+        lastUpdated: (createdData?.lastUpdated as admin.firestore.Timestamp)?.toDate().toISOString(),
+        createdAt: (createdData?.createdAt as admin.firestore.Timestamp)?.toDate().toISOString(),
+        deletedAt: createdData?.deletedAt ? (createdData.deletedAt as admin.firestore.Timestamp).toDate().toISOString() : undefined,
     } as InventoryStockDocument;
 
     return NextResponse.json({ data: createdItem, message: 'Inventory item added successfully.' }, { status: 201 });

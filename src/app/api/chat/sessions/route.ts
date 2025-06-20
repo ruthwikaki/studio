@@ -1,20 +1,31 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { db, AdminTimestamp } from '@/lib/firebase/admin';
+import { getDb, AdminTimestamp, isAdminInitialized } from '@/lib/firebase/admin';
 import { verifyAuthToken } from '@/lib/firebase/admin-auth';
 import type { ChatSessionDocument } from '@/lib/types/firestore';
+import { admin } from '@/lib/firebase/admin'; // For admin.firestore.Timestamp
 
 const DEFAULT_PAGE_SIZE = 15;
 
 interface ChatSessionListItem {
   id: string;
   title?: string;
-  lastMessageAt: string; // ISO string
+  lastMessageAt: string; 
   firstMessagePreview?: string;
 }
 
 export async function GET(request: NextRequest) {
+  if (!isAdminInitialized()) {
+    console.error("[API Chat Sessions] Firebase Admin SDK not initialized.");
+    return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
+  }
+  const db = getDb();
+  if (!db) {
+    console.error("[API Chat Sessions] Firestore instance not available.");
+    return NextResponse.json({ error: "Server configuration error (no db)." }, { status: 500 });
+  }
+
   let companyId: string, userId: string;
   try {
     const authResult = await verifyAuthToken(request);
@@ -26,7 +37,7 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const limit = parseInt(searchParams.get('limit') || `${DEFAULT_PAGE_SIZE}`);
-  const startAfterDocId = searchParams.get('startAfterDocId'); // For cursor-based pagination
+  const startAfterDocId = searchParams.get('startAfterDocId');
 
   try {
     let query = db.collection('chat_sessions')
@@ -50,7 +61,7 @@ export async function GET(request: NextRequest) {
       return {
         id: doc.id,
         title: data.title || (firstUserMessage ? firstUserMessage.substring(0, 50) + (firstUserMessage.length > 50 ? '...' : '') : "Untitled Chat"),
-        lastMessageAt: (data.lastMessageAt as AdminTimestamp).toDate().toISOString(),
+        lastMessageAt: (data.lastMessageAt as admin.firestore.Timestamp).toDate().toISOString(),
         firstMessagePreview: firstUserMessage ? firstUserMessage.substring(0, 100) + (firstUserMessage.length > 100 ? '...' : '') : "No messages yet.",
       };
     });

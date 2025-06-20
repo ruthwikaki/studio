@@ -1,19 +1,27 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { db, FieldValue, AdminTimestamp } from '@/lib/firebase/admin';
+import { getDb, FieldValue, AdminTimestamp, isAdminInitialized } from '@/lib/firebase/admin';
 import { verifyAuthToken } from '@/lib/firebase/admin-auth';
 import type { DocumentMetadata, AccountsPayableDocument, OrderDocument, InvoiceData, PurchaseOrderData } from '@/lib/types/firestore';
+import { admin } from '@/lib/firebase/admin'; // For admin.firestore.Timestamp
 
-// Helper to create an Accounts Payable record
 async function generatePayableRecord(invoiceDocMeta: DocumentMetadata, companyId: string, userId: string) {
-    const invoiceData = invoiceDocMeta.extractedData as InvoiceData; // Assume it's InvoiceData
+    if (!isAdminInitialized()) {
+      throw new Error("Admin SDK not initialized for generatePayableRecord.");
+    }
+    const db = getDb();
+    if (!db) {
+      throw new Error("Firestore not available for generatePayableRecord.");
+    }
+
+    const invoiceData = invoiceDocMeta.extractedData as InvoiceData;
     if (!invoiceData || invoiceData.documentType !== 'invoice' || !invoiceData.totalAmount || !invoiceData.invoiceDate) {
         console.warn("Cannot generate payable record: Invoice data incomplete or not an invoice.", invoiceDocMeta.id);
         return null;
     }
 
-    const dueDateString = invoiceData.dueDate || invoiceData.invoiceDate; // Default due date to invoice date if not present
+    const dueDateString = invoiceData.dueDate || invoiceData.invoiceDate;
     
     const apRef = db.collection('accounts_payable').doc();
     const newPayable: Omit<AccountsPayableDocument, 'id' | 'createdAt'> = {
@@ -21,8 +29,8 @@ async function generatePayableRecord(invoiceDocMeta: DocumentMetadata, companyId
         invoiceId: invoiceDocMeta.id,
         supplierName: invoiceData.vendorDetails?.name,
         invoiceNumber: invoiceData.invoiceNumber || `INV-${invoiceDocMeta.id.substring(0,6)}`,
-        invoiceDate: AdminTimestamp.fromDate(new Date(invoiceData.invoiceDate)),
-        dueDate: AdminTimestamp.fromDate(new Date(dueDateString)),
+        invoiceDate: admin.firestore.Timestamp.fromDate(new Date(invoiceData.invoiceDate)),
+        dueDate: admin.firestore.Timestamp.fromDate(new Date(dueDateString)),
         totalAmount: invoiceData.totalAmount,
         amountPaid: 0,
         balanceDue: invoiceData.totalAmount,
@@ -35,6 +43,16 @@ async function generatePayableRecord(invoiceDocMeta: DocumentMetadata, companyId
 
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+  if (!isAdminInitialized()) {
+    console.error("[API Doc Approve] Firebase Admin SDK not initialized.");
+    return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
+  }
+  const db = getDb();
+  if (!db) {
+    console.error("[API Doc Approve] Firestore instance not available.");
+    return NextResponse.json({ error: "Server configuration error (no db)." }, { status: 500 });
+  }
+
   let companyId: string, userId: string;
   try {
     const authResult = await verifyAuthToken(request);
@@ -65,28 +83,27 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         return NextResponse.json({ error: `Document cannot be approved. Current status: ${documentMetadata.status}. Expected pending_review, extraction_complete or processed.` }, { status: 400 });
     }
 
-    const updates: Partial<DocumentMetadata> = {
+    const updates: Partial<DocumentMetadata> & {lastUpdatedBy: string, lastUpdated: admin.firestore.FieldValue} = {
       status: 'approved',
       approvedBy: userId,
-      approvedAt: FieldValue.serverTimestamp() as AdminTimestamp,
+      approvedAt: FieldValue.serverTimestamp() as admin.firestore.Timestamp,
       lastUpdatedBy: userId,
+      lastUpdated: FieldValue.serverTimestamp()
     };
     
     let actionMessage = 'Document approved successfully.';
 
-    // Perform actions based on document type
     if (documentMetadata.extractedData?.documentType === 'invoice') {
         const apRecordId = await generatePayableRecord(documentMetadata, companyId, userId);
         if (apRecordId) {
             actionMessage += ` Accounts Payable record ${apRecordId} created.`;
         }
         if (documentMetadata.linkedPoId) {
-            // Update status of the linked Purchase Order (OrderDocument)
             const poRef = db.collection('orders').doc(documentMetadata.linkedPoId);
             const poSnap = await poRef.get();
             if (poSnap.exists && poSnap.data()?.companyId === companyId) {
                 await poRef.update({ 
-                    status: 'completed', // Or a status like 'invoice_matched'
+                    status: 'completed', 
                     lastUpdated: FieldValue.serverTimestamp(),
                     lastUpdatedBy: userId,
                     notes: FieldValue.arrayUnion(`Matched with Invoice ${documentMetadata.id}`) 
@@ -95,9 +112,6 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
             }
         }
     } else if (documentMetadata.extractedData?.documentType === 'purchase_order') {
-        // This assumes a PO document is approved before it becomes an actual order in 'orders' collection.
-        // Or, it could update an existing OrderDocument that was created from this PO document.
-        // For now, just logging.
         actionMessage += ' Purchase Order approved. (Further PO processing logic TBD).';
     }
 

@@ -1,12 +1,12 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { db, FieldValue, AdminTimestamp } from '@/lib/firebase/admin';
+import { getDb, FieldValue, AdminTimestamp, isAdminInitialized } from '@/lib/firebase/admin';
 import { verifyAuthToken } from '@/lib/firebase/admin-auth';
 import type { OrderDocument, OrderStatus, InventoryStockDocument } from '@/lib/types/firestore';
 import { z } from 'zod';
+import { admin } from '@/lib/firebase/admin'; // For admin.firestore.Timestamp
 
-// Define valid order statuses, ensure this matches your OrderStatus type in firestore.ts
 const ValidOrderStatuses = z.enum([
   'pending_approval', 'pending_payment', 'pending', 'processing', 
   'pending_fulfillment', 'awaiting_shipment', 'awaiting_delivery', 
@@ -19,10 +19,19 @@ const UpdateOrderStatusSchema = z.object({
   actualDeliveryDate: z.string().optional().refine(val => !val || !isNaN(Date.parse(val)), {
     message: "Actual delivery date must be a valid date string if provided",
   }),
-  // Add other fields that might be updated with status change, e.g., trackingNumber
 });
 
 export async function PUT(request: NextRequest, { params }: { params: { orderId: string } }) {
+  if (!isAdminInitialized()) {
+    console.error("[API Order Status] Firebase Admin SDK not initialized.");
+    return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
+  }
+  const db = getDb();
+  if (!db) {
+    console.error("[API Order Status] Firestore instance not available.");
+    return NextResponse.json({ error: "Server configuration error (no db)." }, { status: 500 });
+  }
+
   let companyId: string, userId: string;
   try {
     const authResult = await verifyAuthToken(request);
@@ -52,12 +61,12 @@ export async function PUT(request: NextRequest, { params }: { params: { orderId:
     const updatedOrderData = await db.runTransaction(async (transaction) => {
       const orderDoc = await transaction.get(orderRef);
       if (!orderDoc.exists) {
-        throw new Error('Order not found.'); // Caught by transaction, results in 404-like
+        throw new Error('Order not found.');
       }
 
       const orderData = orderDoc.data() as OrderDocument;
       if (orderData.companyId !== companyId) {
-        throw new Error('Access denied to this order.'); // Results in 403-like
+        throw new Error('Access denied to this order.');
       }
 
       const updatePayload: any = {
@@ -67,12 +76,11 @@ export async function PUT(request: NextRequest, { params }: { params: { orderId:
       };
 
       if (newActualDeliveryDateStr) {
-        updatePayload.actualDeliveryDate = AdminTimestamp.fromDate(new Date(newActualDeliveryDateStr));
+        updatePayload.actualDeliveryDate = admin.firestore.Timestamp.fromDate(new Date(newActualDeliveryDateStr));
       }
 
       transaction.update(orderRef, updatePayload);
 
-      // If PO is marked as 'delivered' or 'completed', update inventory stock
       if (orderData.type === 'purchase' && (newStatus === 'delivered' || newStatus === 'completed')) {
         for (const item of orderData.items) {
           const inventoryQuery = db.collection('inventory')
@@ -80,7 +88,7 @@ export async function PUT(request: NextRequest, { params }: { params: { orderId:
             .where('sku', '==', item.sku)
             .limit(1);
           
-          const inventorySnapshot = await transaction.get(inventoryQuery); // Get within transaction
+          const inventorySnapshot = await transaction.get(inventoryQuery);
 
           if (!inventorySnapshot.empty) {
             const inventoryDocRef = inventorySnapshot.docs[0].ref;
@@ -88,35 +96,30 @@ export async function PUT(request: NextRequest, { params }: { params: { orderId:
               quantity: FieldValue.increment(item.quantity),
               lastUpdated: FieldValue.serverTimestamp(),
               lastUpdatedBy: userId,
-              // TODO: Potentially decrement an "onOrderQuantity" field here if it exists
             };
             transaction.update(inventoryDocRef, inventoryUpdate);
           } else {
-            // Item from PO not found in inventory - this is a data integrity issue or new item.
-            // Decide how to handle: create it, or log an error. For now, we'll log.
             console.warn(`Inventory item with SKU ${item.sku} for company ${companyId} not found during PO receiving. Order ID: ${orderId}`);
-            // Optionally, create the inventory item here if that's desired behavior.
-            // const newInvRef = db.collection('inventory').doc();
-            // transaction.set(newInvRef, { /* ... new inventory item data ... */ });
           }
         }
       }
-      return { id: orderDoc.id, ...orderData, ...updatePayload }; // Return optimistic update
+      // Return the original data merged with the update payload for optimistic response.
+      // The actual server timestamps will be fetched after the transaction.
+      return { id: orderDoc.id, ...orderData, ...updatePayload, actualDeliveryDate: updatePayload.actualDeliveryDate || orderData.actualDeliveryDate };
     });
     
-    // Fetch the document again to get actual server timestamps
     const finalDocSnap = await orderRef.get();
     const finalData = finalDocSnap.data();
     const responseOrder = {
         id: finalDocSnap.id,
         ...finalData,
-        orderDate: (finalData?.orderDate as AdminTimestamp)?.toDate().toISOString(),
-        expectedDate: (finalData?.expectedDate as AdminTimestamp)?.toDate()?.toISOString() || null,
-        actualDeliveryDate: (finalData?.actualDeliveryDate as AdminTimestamp)?.toDate()?.toISOString() || null,
-        createdAt: (finalData?.createdAt as AdminTimestamp)?.toDate().toISOString(),
-        lastUpdated: (finalData?.lastUpdated as AdminTimestamp)?.toDate().toISOString(),
+        orderDate: (finalData?.orderDate as admin.firestore.Timestamp)?.toDate().toISOString(),
+        expectedDate: (finalData?.expectedDate as admin.firestore.Timestamp)?.toDate()?.toISOString() || null,
+        actualDeliveryDate: (finalData?.actualDeliveryDate as admin.firestore.Timestamp)?.toDate()?.toISOString() || null,
+        createdAt: (finalData?.createdAt as admin.firestore.Timestamp)?.toDate().toISOString(),
+        lastUpdated: (finalData?.lastUpdated as admin.firestore.Timestamp)?.toDate().toISOString(),
+        deletedAt: finalData?.deletedAt ? (finalData.deletedAt as admin.firestore.Timestamp).toDate().toISOString() : undefined,
     } as OrderDocument;
-
 
     return NextResponse.json({ data: responseOrder, message: `Order ${orderId} status updated to ${newStatus}.` });
 

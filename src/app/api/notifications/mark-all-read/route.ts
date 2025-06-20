@@ -2,11 +2,20 @@
 // src/app/api/notifications/mark-all-read/route.ts
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/firebase/admin';
+import { getDb, isAdminInitialized } from '@/lib/firebase/admin';
 import { withAuth, VerifiedUser } from '@/lib/firebase/admin-auth';
 
-// POST to mark all notifications for the user as read
 export const POST = withAuth(async (request: NextRequest, context: { params: any }, user: VerifiedUser) => {
+  if (!isAdminInitialized()) {
+    console.error("[API Mark All Read] Firebase Admin SDK not initialized.");
+    return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
+  }
+  const db = getDb();
+  if (!db) {
+    console.error("[API Mark All Read] Firestore instance not available.");
+    return NextResponse.json({ error: "Server configuration error (no db)." }, { status: 500 });
+  }
+
   const { companyId, uid: userId } = user;
 
   try {

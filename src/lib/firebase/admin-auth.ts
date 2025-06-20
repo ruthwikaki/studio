@@ -1,16 +1,15 @@
-
 // src/lib/firebase/admin-auth.ts
 import type { NextRequest } from 'next/server';
-import { getAuthAdmin, getDb, AdminTimestamp, isAdminInitialized } from './admin'; // Corrected imports
+import { getAuthAdmin, getDb, AdminTimestamp, isAdminInitialized } from './admin';
 import type { UserDocument, UserRole, UserCacheDocument } from '@/lib/types/firestore';
 import { NextResponse } from 'next/server';
+import { admin } from './admin'; // For admin.firestore.Timestamp
 
 const MOCK_USER_ID = 'user_owner_seed_001';
-const MOCK_COMPANY_ID = 'comp_seed_co_001'; // Standardized ID
+const MOCK_COMPANY_ID = 'comp_seed_co_001';
 const MOCK_EMAIL = 'owner@seedsupply.example.com';
 const MOCK_ROLE: UserRole = 'owner';
 
-// In-memory cache for user data
 interface CachedUserData {
   companyId: string;
   role: UserRole;
@@ -19,7 +18,7 @@ interface CachedUserData {
   lastFetched: number;
 }
 const userCache = new Map<string, CachedUserData>();
-const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+const CACHE_DURATION_MS = 5 * 60 * 1000;
 
 export interface VerifiedUser {
   uid: string;
@@ -155,7 +154,7 @@ export async function verifyAuthTokenOnServerAction(): Promise<VerifiedUser> {
 // Higher-order function to wrap API route handlers with authentication
 export function withAuth(handler: (request: NextRequest, context: { params: any }, user: VerifiedUser) => Promise<NextResponse | Response>) {
   return async (request: NextRequest, context: { params: any }): Promise<NextResponse | Response> => {
-    console.log(`[Admin Auth - withAuth] API request received for: ${request.nextUrl.pathname}`);
+    console.log(`[Admin Auth - withAuth HOC] API request received for: ${request.nextUrl.pathname}`);
     try {
       const user = await verifyAuthToken(request);
       return await handler(request, context, user);
@@ -201,6 +200,3 @@ export function withRoleAuthorization(
     return handler(request, context, user);
   });
 }
-    
-
-    

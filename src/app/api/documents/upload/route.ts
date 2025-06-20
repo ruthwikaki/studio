@@ -1,10 +1,11 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { db, storageAdmin, AdminTimestamp, FieldValue } from '@/lib/firebase/admin';
+import { getDb, getStorageAdmin, AdminTimestamp, FieldValue, isAdminInitialized } from '@/lib/firebase/admin';
 import { verifyAuthToken } from '@/lib/firebase/admin-auth';
 import type { DocumentMetadata } from '@/lib/types/firestore';
 import { z } from 'zod';
+import { admin } from '@/lib/firebase/admin'; // For admin.firestore.Timestamp
 
 const MAX_FILE_SIZE_MB = 10;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
@@ -12,10 +13,20 @@ const SUPPORTED_MIME_TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'ima
 
 const UploadRequestSchema = z.object({
   documentTypeHint: z.enum(['invoice', 'purchase_order', 'receipt', 'auto_detect', 'unknown']).optional().default('auto_detect'),
-  // Add other potential metadata from client here
 });
 
 export async function POST(request: NextRequest) {
+  if (!isAdminInitialized()) {
+    console.error("[API Doc Upload] Firebase Admin SDK not initialized.");
+    return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
+  }
+  const db = getDb();
+  const storageAdmin = getStorageAdmin();
+  if (!db || !storageAdmin) {
+    console.error("[API Doc Upload] Firestore or Storage instance not available.");
+    return NextResponse.json({ error: "Server configuration error (no db/storage)." }, { status: 500 });
+  }
+
   let companyId: string, userId: string;
   try {
     const authResult = await verifyAuthToken(request);
@@ -28,13 +39,11 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
-    // const documentTypeHint = formData.get('documentTypeHint') as string || 'auto_detect'; // If sent as separate field
 
     if (!file) {
       return NextResponse.json({ error: 'No file uploaded.' }, { status: 400 });
     }
 
-    // Validate file type and size
     if (!SUPPORTED_MIME_TYPES.includes(file.type)) {
       return NextResponse.json({ error: `Unsupported file type: ${file.type}. Supported types: PDF, PNG, JPG, JPEG.` }, { status: 400 });
     }
@@ -44,7 +53,7 @@ export async function POST(request: NextRequest) {
 
     const timestamp = Date.now();
     const storagePath = `documents/${companyId}/${timestamp}_${file.name}`;
-    const bucket = storageAdmin.bucket(process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET); // Ensure bucket name is in env
+    const bucket = storageAdmin.bucket(process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET); 
     
     const fileBuffer = Buffer.from(await file.arrayBuffer());
     const storageFile = bucket.file(storagePath);
@@ -53,7 +62,6 @@ export async function POST(request: NextRequest) {
       metadata: { contentType: file.type },
     });
     
-    // Make the file public for now, or use signed URLs in a real app
     await storageFile.makePublic();
     const publicUrl = storageFile.publicUrl();
 
@@ -65,16 +73,12 @@ export async function POST(request: NextRequest) {
       fileType: file.type,
       fileSize: file.size,
       fileUrl: publicUrl,
-      status: 'uploaded', // Initial status
-      documentTypeHint: 'auto_detect', // For now, or get from client if provided
-      uploadedAt: FieldValue.serverTimestamp() as AdminTimestamp,
+      status: 'uploaded',
+      documentTypeHint: 'auto_detect',
+      uploadedAt: FieldValue.serverTimestamp() as admin.firestore.Timestamp,
     };
 
     await docRef.set(newDocumentData);
-
-    // Simulate triggering OCR processing: In a real app, this might be a Cloud Function trigger
-    // For now, we can immediately update status to 'pending_ocr' or queue it.
-    // Let's set to 'pending_ocr' to indicate next step for /process/[id] endpoint.
     await docRef.update({ status: 'pending_ocr' });
 
     return NextResponse.json({ 

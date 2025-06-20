@@ -1,16 +1,27 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { db, FieldValue, AdminTimestamp } from '@/lib/firebase/admin';
+import { getDb, FieldValue, AdminTimestamp, isAdminInitialized } from '@/lib/firebase/admin';
 import { verifyAuthToken } from '@/lib/firebase/admin-auth';
 import { z } from 'zod';
 import type { OrderDocument } from '@/lib/types/firestore';
+import { admin } from '@/lib/firebase/admin'; // For admin.firestore.Timestamp
 
 const ScoreRequestSchema = z.object({
   supplierId: z.string().min(1),
 });
 
 export async function POST(request: NextRequest) {
+  if (!isAdminInitialized()) {
+    console.error("[API Supplier Score] Firebase Admin SDK not initialized.");
+    return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
+  }
+  const db = getDb();
+  if (!db) {
+    console.error("[API Supplier Score] Firestore instance not available.");
+    return NextResponse.json({ error: "Server configuration error (no db)." }, { status: 500 });
+  }
+  
   let companyId: string, userId: string;
   try {
     const authResult = await verifyAuthToken(request);
@@ -40,48 +51,41 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Access denied to this supplier.' }, { status: 403 });
     }
 
-    // Simplified Reliability Score Calculation
-    // Fetch recent orders from this supplier (e.g., last 50 completed/delivered purchase orders)
     const ordersSnapshot = await db.collection('orders')
                                    .where('companyId', '==', companyId)
                                    .where('supplierId', '==', supplierId)
                                    .where('type', '==', 'purchase')
-                                   .where('status', 'in', ['delivered', 'completed']) // Consider only finished orders
+                                   .where('status', 'in', ['delivered', 'completed'])
                                    .orderBy('orderDate', 'desc')
-                                   .limit(50) // Limit for performance
+                                   .limit(50)
                                    .get();
 
     let onTimeDeliveries = 0;
     let totalRelevantOrders = 0;
-    let baseScore = 75; // Start with a base score
+    let baseScore = 75;
 
     ordersSnapshot.docs.forEach(doc => {
       const order = doc.data() as OrderDocument;
       totalRelevantOrders++;
       if (order.expectedDate && order.actualDeliveryDate) {
-        const expected = (order.expectedDate as AdminTimestamp).toDate();
-        const actual = (order.actualDeliveryDate as AdminTimestamp).toDate();
+        const expected = (order.expectedDate as admin.firestore.Timestamp).toDate();
+        const actual = (order.actualDeliveryDate as admin.firestore.Timestamp).toDate();
         if (actual <= expected) {
           onTimeDeliveries++;
         }
       } else {
-        // If dates are missing, count as neutral or slightly penalize
-        onTimeDeliveries += 0.5; // Neutral contribution if dates missing
+        onTimeDeliveries += 0.5;
       }
     });
 
     if (totalRelevantOrders > 0) {
       const onTimeRate = (onTimeDeliveries / totalRelevantOrders);
-      // Scale onTimeRate (0-1) to a score impact (e.g., +/- 20 points)
-      // If onTimeRate is 1 (100%), adds 20. If 0.5 (50%), adds 0. If 0, subtracts 20.
       const scoreImpactFromDelivery = (onTimeRate - 0.5) * 40; 
       baseScore += scoreImpactFromDelivery;
     }
     
-    // Placeholder for quality & communication factors (would need more data models)
-    // For now, let's add a small random factor to simulate other influences or if no order data
-    if (totalRelevantOrders < 5) { // If few orders, make score less certain
-        baseScore += (Math.random() * 10) - 5; // +/- 5 points
+    if (totalRelevantOrders < 5) {
+        baseScore += (Math.random() * 10) - 5;
     }
 
     const newCalculatedScore = Math.max(0, Math.min(100, Math.round(baseScore)));

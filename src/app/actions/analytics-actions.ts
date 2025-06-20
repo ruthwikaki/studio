@@ -1,11 +1,12 @@
 
 'use server';
 
-import { db, AdminTimestamp, FieldValue } from '@/lib/firebase/admin';
+import { getDb, AdminTimestamp, FieldValue, isAdminInitialized } from '@/lib/firebase/admin';
 import { verifyAuthTokenOnServerAction } from '@/lib/firebase/admin-auth';
 import type { InventoryStockDocument, SalesHistoryDocument, AnalyticsDocument } from '@/lib/types/firestore';
 import Papa from 'papaparse';
 import { revalidatePath } from 'next/cache';
+import { admin } from '@/lib/firebase/admin'; // For admin.firestore.Timestamp
 
 interface ActionResult<T = null> {
   success: boolean;
@@ -15,10 +16,17 @@ interface ActionResult<T = null> {
 }
 
 export async function generateDailyReport(): Promise<ActionResult<AnalyticsDocument>> {
+  if (!isAdminInitialized()) {
+    return { success: false, error: "Server configuration error (Admin SDK not initialized)." };
+  }
+  const db = getDb();
+  if (!db) {
+    return { success: false, error: "Server configuration error (Firestore not available)." };
+  }
+
   try {
     const { companyId, uid } = await verifyAuthTokenOnServerAction();
 
-    // 1. Fetch necessary data
     const inventorySnapshot = await db.collection('inventory').where('companyId', '==', companyId).get();
     
     let totalInventoryValue = 0;
@@ -42,8 +50,8 @@ export async function generateDailyReport(): Promise<ActionResult<AnalyticsDocum
 
     const salesTodaySnapshot = await db.collection('sales_history')
                                       .where('companyId', '==', companyId)
-                                      .where('date', '>=', AdminTimestamp.fromDate(today))
-                                      .where('date', '<', AdminTimestamp.fromDate(tomorrow))
+                                      .where('date', '>=', admin.firestore.Timestamp.fromDate(today))
+                                      .where('date', '<', admin.firestore.Timestamp.fromDate(tomorrow))
                                       .get();
     let todaysRevenue = 0;
     salesTodaySnapshot.docs.forEach(doc => {
@@ -54,20 +62,18 @@ export async function generateDailyReport(): Promise<ActionResult<AnalyticsDocum
     const reportId = `daily_report_${companyId}_${today.toISOString().split('T')[0]}`;
     const reportData: Omit<AnalyticsDocument, 'id'> = {
       companyId,
-      date: AdminTimestamp.fromDate(today),
+      date: admin.firestore.Timestamp.fromDate(today),
       totalInventoryValue,
       lowStockItemsCount,
       outOfStockItemsCount,
       todaysRevenue,
-      // turnoverRate and other complex metrics can be calculated and added here
-      // For example, by calling calculateTurnoverRate if desired for daily report
-      lastCalculated: FieldValue.serverTimestamp() as AdminTimestamp,
+      lastCalculated: FieldValue.serverTimestamp() as admin.firestore.Timestamp,
       generatedBy: uid,
     };
 
     await db.collection('analytics_reports').doc(reportId).set(reportData, { merge: true });
 
-    revalidatePath('/analytics'); // Revalidate analytics page if it shows daily reports
+    revalidatePath('/analytics');
     return { success: true, data: { id: reportId, ...reportData } as AnalyticsDocument, message: "Daily report generated successfully." };
   } catch (e: any) {
     console.error("Error generating daily report:", e);
@@ -76,13 +82,19 @@ export async function generateDailyReport(): Promise<ActionResult<AnalyticsDocum
 }
 
 export async function exportInventoryData(format: 'csv'): Promise<ActionResult<{ content: string; contentType: string; fileName: string }>> {
+  if (!isAdminInitialized()) {
+    return { success: false, error: "Server configuration error (Admin SDK not initialized)." };
+  }
+  const db = getDb();
+  if (!db) {
+    return { success: false, error: "Server configuration error (Firestore not available)." };
+  }
   try {
     const { companyId } = await verifyAuthTokenOnServerAction();
 
     const inventorySnapshot = await db.collection('inventory').where('companyId', '==', companyId).get();
     const itemsToExport = inventorySnapshot.docs.map(doc => {
       const data = doc.data() as InventoryStockDocument;
-      // Select and format fields for export
       return {
         SKU: data.sku,
         Name: data.name,
@@ -91,7 +103,7 @@ export async function exportInventoryData(format: 'csv'): Promise<ActionResult<{
         UnitCost: data.unitCost,
         ReorderPoint: data.reorderPoint,
         Location: data.location || '',
-        LastUpdated: (data.lastUpdated as AdminTimestamp)?.toDate().toISOString() || '',
+        LastUpdated: (data.lastUpdated as admin.firestore.Timestamp)?.toDate().toISOString() || '',
         Notes: data.notes || '',
       };
     });
@@ -120,27 +132,31 @@ export async function exportInventoryData(format: 'csv'): Promise<ActionResult<{
 
 
 export async function calculateTurnoverRate(periodDays: number = 90): Promise<ActionResult<{ turnoverRate: number; cogs: number; avgInventoryValue: number }>> {
+  if (!isAdminInitialized()) {
+    return { success: false, error: "Server configuration error (Admin SDK not initialized)." };
+  }
+  const db = getDb();
+  if (!db) {
+    return { success: false, error: "Server configuration error (Firestore not available)." };
+  }
   try {
     const { companyId } = await verifyAuthTokenOnServerAction();
 
-    // 1. Calculate COGS for the period
     const periodEndDate = new Date();
     const periodStartDate = new Date();
     periodStartDate.setDate(periodEndDate.getDate() - periodDays);
 
     const salesSnapshot = await db.collection('sales_history')
                                 .where('companyId', '==', companyId)
-                                .where('date', '>=', AdminTimestamp.fromDate(periodStartDate))
-                                .where('date', '<=', AdminTimestamp.fromDate(periodEndDate))
+                                .where('date', '>=', admin.firestore.Timestamp.fromDate(periodStartDate))
+                                .where('date', '<=', admin.firestore.Timestamp.fromDate(periodEndDate))
                                 .get();
     let cogs = 0;
     salesSnapshot.docs.forEach(doc => {
       const saleData = doc.data() as SalesHistoryDocument;
-      // Ensure costAtTimeOfSale is a number, default to 0 if not present or not a number
       cogs += typeof saleData.costAtTimeOfSale === 'number' ? saleData.costAtTimeOfSale : 0;
     });
 
-    // 2. Calculate Current Inventory Value (Simplified Average)
     const inventorySnapshot = await db.collection('inventory').where('companyId', '==', companyId).get();
     let currentInventoryValue = 0;
     inventorySnapshot.docs.forEach(doc => {
@@ -150,20 +166,12 @@ export async function calculateTurnoverRate(periodDays: number = 90): Promise<Ac
       currentInventoryValue += quantity * unitCost;
     });
     
-    // Simplified: using current inventory value as average for this example.
-    // In a real scenario, you'd fetch/calculate beginning and ending inventory for the period.
     const avgInventoryValue = currentInventoryValue; 
 
     if (avgInventoryValue === 0) {
-      // Avoid division by zero. If there's COGS but no inventory, turnover is effectively infinite (or an error).
-      // If COGS is also 0, turnover is 0.
       return { 
         success: true, 
-        data: { 
-          turnoverRate: 0, 
-          cogs, 
-          avgInventoryValue 
-        },
+        data: { turnoverRate: 0, cogs, avgInventoryValue },
         message: cogs > 0 ? `Average inventory value is zero with COGS > 0. Turnover rate is undefined or infinite.` : `Average inventory value and COGS are zero. Turnover rate is 0.`
       };
     }
@@ -172,11 +180,7 @@ export async function calculateTurnoverRate(periodDays: number = 90): Promise<Ac
 
     return { 
       success: true, 
-      data: { 
-        turnoverRate: parseFloat(turnoverRate.toFixed(2)), // Rounded
-        cogs, 
-        avgInventoryValue 
-      },
+      data: { turnoverRate: parseFloat(turnoverRate.toFixed(2)), cogs, avgInventoryValue },
       message: `Inventory turnover rate calculated for the last ${periodDays} days.`
     };
 
