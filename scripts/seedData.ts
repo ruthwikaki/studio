@@ -41,14 +41,15 @@ if (admin.apps.length > 0 && admin.app().options && admin.app().options.projectI
 
 console.log("--- Data Seeding Script for ARIA ---");
 
-const MOCK_COMPANY_ID = 'comp_seed_co_001'; // Changed to be more generic
+const MOCK_COMPANY_ID = 'comp_seed_co_001';
 const MOCK_USER_ID_OWNER = 'user_owner_seed_001';
 const MOCK_USER_ID_MANAGER = 'user_manager_seed_001';
 const MOCK_PRODUCT_IDS: Record<string, string> = {};
+const STORAGE_BUCKET_NAME = 'aria-jknbu.appspot.com'; // Your actual bucket name
 
 const mockCompany: Omit<CompanyDocument, 'id' | 'createdAt'> & { id: string, createdAt: Date } = {
   id: MOCK_COMPANY_ID,
-  name: 'Seed Supply Co.', // Changed from "ARIA Seed Co."
+  name: 'Seed Supply Co.',
   plan: 'pro',
   createdAt: new Date(),
   settings: { timezone: 'America/New_York', currency: 'USD' },
@@ -58,18 +59,18 @@ const mockCompany: Omit<CompanyDocument, 'id' | 'createdAt'> & { id: string, cre
 const mockUsers: (Omit<UserDocument, 'uid' | 'createdAt'> & { uid: string, createdAt: Date })[] = [
   {
     uid: MOCK_USER_ID_OWNER,
-    email: 'owner@seedsupply.example.com', // Kept generic email
+    email: 'owner@seedsupply.example.com',
     companyId: MOCK_COMPANY_ID,
     role: 'owner',
-    displayName: 'Seed Co. Owner', // Adjusted display name
+    displayName: 'Seed Co. Owner',
     createdAt: new Date(),
   },
   {
     uid: MOCK_USER_ID_MANAGER,
-    email: 'manager@seedsupply.example.com', // Kept generic email
+    email: 'manager@seedsupply.example.com',
     companyId: MOCK_COMPANY_ID,
     role: 'manager',
-    displayName: 'Seed Co. Manager', // Adjusted display name
+    displayName: 'Seed Co. Manager',
     createdAt: new Date(),
   },
 ];
@@ -120,15 +121,15 @@ const mockInventoryStock: (Omit<InventoryStockDocument, 'id' | 'lastUpdated' | '
 
 const laptopDiscountTiers: DiscountTier[] = [
     { minQuantity: 10, price: 830.00 },
-    { minQuantity: 20, discountPercentage: 5 },
+    { minQuantity: 20, discountPercentage: 5 }, // e.g. 5% off $850 (original cost)
 ];
 const monitorDiscountTiers: DiscountTier[] = [
     { minQuantity: 5, price: 205.00 },
-    { minQuantity: 10, discountPercentage: 3 },
+    { minQuantity: 10, discountPercentage: 3 }, // e.g. 3% off $220 (original cost)
 ];
 const mouseDiscountTiers: DiscountTier[] = [
     { minQuantity: 100, price: 14.50 },
-    { minQuantity: 200, discountPercentage: 5 },
+    { minQuantity: 200, discountPercentage: 5 }, // e.g. 5% off $15.50 (original cost)
 ];
 
 
@@ -296,7 +297,7 @@ const mockDocumentsRaw: (Omit<DocumentMetadata, 'id' | 'companyId' | 'uploadedAt
     fileName: 'invoice_electroparts_2024_03.pdf',
     fileType: 'application/pdf',
     fileSize: 123456,
-    fileUrl: 'gs://your-bucket-name/documents/invoice_electroparts_2024_03.pdf',
+    fileUrl: `gs://${STORAGE_BUCKET_NAME}/documents/${MOCK_COMPANY_ID}/invoice_electroparts_2024_03.pdf`,
     status: 'processed',
     documentTypeHint: 'invoice',
     extractedData: { documentType: "invoice", invoiceNumber: "INV-EP-789", totalAmount: 9525.00, vendorName: "ElectroParts Ltd." },
@@ -308,7 +309,7 @@ const mockDocumentsRaw: (Omit<DocumentMetadata, 'id' | 'companyId' | 'uploadedAt
     fileName: 'po_to_generalgoods_march.png',
     fileType: 'image/png',
     fileSize: 78910,
-    fileUrl: 'gs://your-bucket-name/documents/po_to_generalgoods_march.png',
+    fileUrl: `gs://${STORAGE_BUCKET_NAME}/documents/${MOCK_COMPANY_ID}/po_to_generalgoods_march.png`,
     status: 'pending_review',
     documentTypeHint: 'purchase_order',
     extractedData: { documentType: "purchase_order", poNumber: "PO-GG-102", totalAmount: 550.00, supplierDetails: { name: "General Goods Inc."} },
@@ -554,7 +555,3 @@ async function seedDatabase() {
 seedDatabase().catch(error => {
   console.error("[Seed Script] Unhandled error during seeding:", error);
   process.exit(1);
-});
-
-
-    
