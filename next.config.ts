@@ -1,3 +1,5 @@
+
+import 'dotenv/config'; // Ensures .env file is loaded
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {

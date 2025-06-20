@@ -1,41 +1,41 @@
 
 // src/lib/firebase/admin.ts
 import * as Fadmin from 'firebase-admin';
-import path from 'path';
-import fs from 'fs';
 
 console.log('[Admin SDK] Module loading...');
 
 let adminInstance: Fadmin.app.App | null = null;
 let initializationError: Error | null = null;
 
-const SERVICE_ACCOUNT_FILE = 'service-account-key.json';
-
 function initializeAdminAppSingleton(): void {
+  console.log('[Admin SDK] Attempting to initialize...');
   if (adminInstance) {
     console.log('[Admin SDK] Already initialized.');
     return;
   }
 
   try {
-    const serviceAccountPath = path.join(process.cwd(), SERVICE_ACCOUNT_FILE);
-    console.log(`[Admin SDK] Looking for service account key at: ${serviceAccountPath}`);
+    // These variables are expected to be in your .env file
+    const projectId = process.env.FIREBASE_PROJECT_ID;
+    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+    const privateKey = process.env.FIREBASE_PRIVATE_KEY;
 
-    if (!fs.existsSync(serviceAccountPath)) {
-      throw new Error(`Service account key file not found at ${serviceAccountPath}. Ensure '${SERVICE_ACCOUNT_FILE}' is in the project root.`);
+    if (!projectId || !clientEmail || !privateKey) {
+      throw new Error('Missing required Firebase Admin environment variables. Ensure FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY are in your .env file.');
     }
-
-    const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
-    console.log(`[Admin SDK] Service account file loaded for project: ${serviceAccount.project_id}`);
 
     if (Fadmin.apps.length > 0) {
       console.log('[Admin SDK] An app is already initialized. Getting default app.');
       adminInstance = Fadmin.app();
     } else {
-      console.log('[Admin SDK] Initializing new Firebase Admin app...');
+      console.log('[Admin SDK] Initializing new Firebase Admin app from environment variables...');
       adminInstance = Fadmin.initializeApp({
-        credential: Fadmin.credential.cert(serviceAccount),
-        storageBucket: `${serviceAccount.project_id}.appspot.com`,
+        credential: Fadmin.credential.cert({
+          projectId,
+          clientEmail,
+          privateKey: privateKey.replace(/\\n/g, '\n'), // Important for handling multiline keys from .env
+        }),
+        storageBucket: `${projectId}.appspot.com`,
       });
     }
     
