@@ -1,8 +1,9 @@
-
 // src/middleware.ts
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { verifyAuthToken, VerifiedUser } from '@/lib/firebase/admin-auth'; // Assuming verifyAuthToken can handle mock/dev
+
+export const runtime = 'nodejs'; // Force Node.js runtime instead of edge
 
 console.log('[Middleware] Module loaded.');
 
