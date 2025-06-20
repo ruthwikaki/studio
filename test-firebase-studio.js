@@ -3,7 +3,7 @@
 const admin = require('firebase-admin');
 const https = require('https');
 const http = require('http');
-// const path = require('path'); // path module not strictly needed if using env vars
+// const path = require('path'); // Removed: path module not strictly needed for this script with env vars
 
 // Load environment variables from .env (or .env.local) if this script is run locally
 // In Firebase Studio, environment variables should be set directly in the environment.
@@ -89,8 +89,10 @@ async function runDiagnostics() {
             clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
             privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') // Ensure newlines are handled
         }),
-        projectId: process.env.FIREBASE_PROJECT_ID
+        projectId: process.env.FIREBASE_PROJECT_ID // Explicitly set projectId here as well
       });
+    } else {
+      console.log(`\n  └─ Admin SDK already initialized. Using existing app.`);
     }
     if (!admin.app().options.projectId) {
         throw new Error('Admin SDK initialized but project ID is undefined.');
@@ -253,3 +255,4 @@ async function runDiagnostics() {
 runDiagnostics().catch(error => {
     console.error("\nCRITICAL ERROR DURING DIAGNOSTICS:", error);
 });
+    

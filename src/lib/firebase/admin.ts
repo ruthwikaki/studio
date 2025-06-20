@@ -1,4 +1,3 @@
-
 // src/lib/firebase/admin.ts
 import * as Fadmin from 'firebase-admin'; // Renamed to Fadmin to avoid conflict with local 'admin' export
 
@@ -10,18 +9,19 @@ const ARIA_ADMIN_APP_NAME = 'ARIA_ADMIN_APP_PRIMARY_INSTANCE';
 
 function initializeAdminAppSingleton(): void {
   console.log(`[Admin SDK] initializeAdminAppSingleton CALLED (Environment Variable Only Approach). Current apps: ${Fadmin.apps.length}`);
-  if (adminInstance) {
-    console.log('[Admin SDK] Admin SDK already initialized or initialization attempted.');
+  if (adminInstance && !initializationError) {
+    console.log('[Admin SDK] Admin SDK already initialized and no previous error.');
     return;
   }
+  // Clear previous error if we are re-attempting
+  initializationError = null;
 
   try {
     if (Fadmin.apps.some(app => app?.name === ARIA_ADMIN_APP_NAME)) {
       adminInstance = Fadmin.app(ARIA_ADMIN_APP_NAME);
       console.log(`[Admin SDK] Re-using existing Firebase Admin app instance: ${ARIA_ADMIN_APP_NAME}. Project ID: ${adminInstance.options.projectId}`);
-      initializationError = null;
       if (!adminInstance.options.projectId) {
-          const errDetail = 'Re-used adminInstance has no projectId.';
+          const errDetail = 'Re-used adminInstance has no projectId. This is a critical configuration issue.';
           console.error(`[Admin SDK] CRITICAL ERROR: ${errDetail}`);
           initializationError = new Error(errDetail);
           adminInstance = null; // Invalidate if critical detail is missing
@@ -46,6 +46,9 @@ function initializeAdminAppSingleton(): void {
       return;
     }
     console.log(`[Admin SDK] Using Project ID from env: ${projectId}`);
+    console.log(`[Admin SDK] Using Client Email from env: ${clientEmail ? 'Provided' : 'MISSING!'}`);
+    console.log(`[Admin SDK] Using Private Key from env: ${privateKey ? 'Provided' : 'MISSING!'}`);
+
 
     const formattedPrivateKey = privateKey.replace(/\\n/g, '\n');
 
@@ -61,7 +64,7 @@ function initializeAdminAppSingleton(): void {
       console.log('[Admin SDK] Firebase credential object created successfully from env vars.');
     } catch (e: any) {
       const err = new Error(`Error creating Firebase credential from env vars: ${e.message}. Check environment variable content and format, especially FIREBASE_PRIVATE_KEY.`);
-      console.error('[Admin SDK] CRITICAL ERROR:', err.message, e);
+      console.error('[Admin SDK] CRITICAL ERROR creating credential:', err.message, e);
       initializationError = err;
       adminInstance = null;
       return;
@@ -70,12 +73,13 @@ function initializeAdminAppSingleton(): void {
     console.log(`[Admin SDK] Initializing Firebase Admin app with name: ${ARIA_ADMIN_APP_NAME} for project: ${projectId}`);
     adminInstance = Fadmin.initializeApp({
       credential,
+      // databaseURL: `https://${projectId}.firebaseio.com`, // Optional: if using Realtime Database
       storageBucket: `${projectId}.appspot.com`
     }, ARIA_ADMIN_APP_NAME);
 
     if (!adminInstance.options.projectId) {
-      const err = new Error('Firebase Admin SDK initialized, but project ID is undefined in app options. This is unexpected.');
-      console.error('[Admin SDK] CRITICAL ERROR:', err.message);
+      const err = new Error('Firebase Admin SDK initialized, but project ID is undefined in app options. This is unexpected and indicates a problem with the initialization or environment configuration.');
+      console.error('[Admin SDK] CRITICAL ERROR post-initialization:', err.message);
       initializationError = err;
       adminInstance = null; // Invalidate the instance
       return;
@@ -92,41 +96,52 @@ function initializeAdminAppSingleton(): void {
 
   if (!adminInstance && !initializationError) {
     initializationError = new Error('Admin SDK initialization process completed, but adminInstance is still null and no specific error was caught. This indicates an unknown initialization failure with env vars.');
-    console.error('[Admin SDK] CRITICAL ERROR:', initializationError.message);
+    console.error('[Admin SDK] CRITICAL ERROR: Unknown initialization failure.', initializationError.message);
   }
 }
 
+// Initialize on module load
 initializeAdminAppSingleton();
 
 export function isAdminInitialized(): boolean {
   const initialized = !!adminInstance && !initializationError;
   if (!initialized) {
     console.warn(`[Admin SDK] isAdminInitialized() check: SDK is NOT initialized. Current state - adminInstance: ${!!adminInstance}, initializationError: ${initializationError?.message || 'None'}`);
+  } else {
+    // console.log(`[Admin SDK] isAdminInitialized() check: SDK IS initialized. Project ID: ${adminInstance?.options.projectId}`);
   }
   return initialized;
 }
 
 export function getInitializationError(): string | null {
-  return initializationError ? `Admin SDK Init Error: ${initializationError.message}` : null;
+  if (initializationError) {
+    return `Admin SDK Init Error: ${initializationError.message}`;
+  }
+  if (!adminInstance) {
+    return 'Admin SDK Init Error: Firebase Admin instance is null after initialization attempt, but no specific error was recorded.';
+  }
+  return null;
 }
 
 function getAdminInstanceSafe(): Fadmin.app.App {
   if (!adminInstance || initializationError) {
     console.warn(`[Admin SDK] Attempted to get admin instance, but it is not initialized or an error occurred. Error: ${initializationError?.message || 'Previously failed to init.'}.`);
-    // Avoid re-initialization attempt if a definitive error already exists,
-    // or if it's null because required env vars were missing.
-    if (initializationError?.message.startsWith("Missing required Firebase Admin environment variables")) {
-        throw new Error(`Firebase Admin SDK cannot be used: ${initializationError.message}`);
+    
+    if (initializationError && initializationError.message.startsWith("Missing required Firebase Admin environment variables")) {
+        console.error(`[Admin SDK] CRITICAL HALT: Cannot re-attempt initialization due to missing env vars: ${initializationError.message}`);
+        throw initializationError;
     }
-    // If no critical error previously, and still not initialized, try once more.
-    if (!initializationError) {
-      console.log('[Admin SDK] Re-attempting initialization during getAdminInstanceSafe...');
-      initializeAdminAppSingleton();
+    
+    if (!initializationError) { // If no specific error was set, but instance is null, this is an unknown state
+      console.log('[Admin SDK] Re-attempting initialization during getAdminInstanceSafe (instance was null without specific prior error)...');
+      initializeAdminAppSingleton(); // Attempt re-initialization
     }
 
+    // After potential re-attempt, check again
     if (!adminInstance || initializationError) {
-      console.error(`[Admin SDK] Re-initialization attempt failed or previous error persists. Throwing error. Error: ${initializationError?.message || 'Unknown initialization error'}`);
-      throw new Error(`Firebase Admin SDK is not initialized or in an error state. Error: ${initializationError?.message || 'Unknown initialization error'}`);
+      const finalErrorMsg = `Firebase Admin SDK is not initialized or in an error state. Error: ${initializationError?.message || 'Unknown initialization error after re-attempt'}`;
+      console.error(`[Admin SDK] CRITICAL HALT: ${finalErrorMsg}`);
+      throw new Error(finalErrorMsg);
     }
     console.log('[Admin SDK] Re-initialization successful during getAdminInstanceSafe.');
   }
@@ -141,10 +156,10 @@ export function getDb(): Fadmin.firestore.Firestore {
     return db;
   } catch (e: any) {
     console.error('[Admin SDK] Error getting Firestore instance:', e.message, e.stack);
-    if (!initializationError) { // Set error if not already set by a more primary cause
+    if (!initializationError) { 
       initializationError = new Error(`Failed to get Firestore service: ${e.message}`);
     }
-    throw e; // Re-throw to propagate the error
+    throw e; 
   }
 }
 
@@ -182,3 +197,4 @@ export function getStorageAdmin(): Fadmin.storage.Storage {
 export { Fadmin as admin };
 export const FieldValue = Fadmin.firestore.FieldValue;
 export const AdminTimestamp = Fadmin.firestore.Timestamp;
+    
