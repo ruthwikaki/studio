@@ -12,7 +12,7 @@ function initializeAdminAppSingleton(): admin.app.App | null {
     return adminInstance;
   }
   if (initializationError) {
-    console.error("[Admin SDK] Initialization previously failed and will not be re-attempted in this instance. Error:", initializationError.message);
+    // console.warn("[Admin SDK] Initialization previously failed and will not be re-attempted in this singleton call. Error:", initializationError.message);
     return null;
   }
   
@@ -25,7 +25,7 @@ function initializeAdminAppSingleton(): admin.app.App | null {
   if (admin.apps.length > 0) {
     const defaultApp = admin.apps.find(app => app?.name === '[DEFAULT]');
     if (defaultApp) {
-      console.log(`[Admin SDK] Using existing [DEFAULT] Firebase Admin app instance. Project ID: ${defaultApp.options.projectId}`);
+      console.log(`[Admin SDK] Using existing [DEFAULT] Firebase Admin app instance. Project ID: ${defaultApp.options.projectId || 'N/A'}`);
       adminInstance = defaultApp;
       return adminInstance;
     }
@@ -57,7 +57,7 @@ function initializeAdminAppSingleton(): admin.app.App | null {
       projectId: serviceAccount.project_id,
     }, '[DEFAULT]'); // Explicitly name the app as [DEFAULT]
     console.log(`[Admin SDK] Firebase Admin SDK initialized successfully for project: ${serviceAccount.project_id}. App name: ${adminInstance.name}`);
-    initializationError = null;
+    initializationError = null; // Clear any previous error if re-attempted and successful
     return adminInstance;
 
   } catch (error: any) {
@@ -75,7 +75,7 @@ function initializeAdminAppSingleton(): admin.app.App | null {
         if (existingDefaultApp) {
             adminInstance = existingDefaultApp;
             initializationError = null; // Clear error as we are using existing
-            console.log(`[Admin SDK] Successfully retrieved existing [DEFAULT] app. Project ID: ${adminInstance.options.projectId}`);
+            console.log(`[Admin SDK] Successfully retrieved existing [DEFAULT] app. Project ID: ${adminInstance.options.projectId || 'N/A'}`);
             return adminInstance;
         } else {
             console.error(`[Admin SDK] CRITICAL ERROR: 'app/duplicate-app' error but could not retrieve existing [DEFAULT] app.`);
@@ -95,46 +95,67 @@ function initializeAdminAppSingleton(): admin.app.App | null {
 initializeAdminAppSingleton();
 
 export function isAdminInitialized(): boolean {
-  // If not initialized and no prior error, try to initialize.
-  // This handles cases where this function might be called before module-level init completes, or for lazy loading.
+  // This check ensures that if the module was loaded but initialization was deferred or failed,
+  // it gets one more chance here.
   if (!adminInstance && !initializationError) {
-    // console.warn("[Admin SDK - isAdminInitialized] Admin instance not set and no prior error, attempting lazy initialization.");
+    // console.warn("[Admin SDK - isAdminInitialized Check] Admin instance not set and no prior error, attempting lazy initialization.");
     initializeAdminAppSingleton();
   }
-  // It's initialized if the instance is valid AND there was no persistent initialization error.
   const isInit = adminInstance !== null && initializationError === null;
-  // if (!isInit) {
-  //   console.warn(`[Admin SDK - isAdminInitialized] Returning false. adminInstance is ${adminInstance ? 'set' : 'null'}, initializationError is ${initializationError ? `present: ${initializationError.message}` : 'null'}`);
-  // }
+  if (!isInit) {
+    // This log will appear every time an API route calls isAdminInitialized and it's false.
+    console.warn(`[Admin SDK - isAdminInitialized Status] Returning ${isInit}. adminInstance is ${adminInstance ? 'set' : 'null'}, initializationError is ${initializationError ? `present: '${initializationError.message}'` : 'null'}`);
+  }
   return isInit;
 }
 
+export function getInitializationError(): string | null {
+    return initializationError ? initializationError.message : null;
+}
+
 export function getDb(): admin.firestore.Firestore | null {
-  if (!isAdminInitialized()) {
-    // console.error("[Admin SDK - getDb] Cannot get Firestore instance: Admin SDK not initialized.");
-    return null;
+  if (!adminInstance) {
+    if (!initializationError) {
+      // console.warn("[Admin SDK - getDb] Admin instance not set, attempting lazy initialization.");
+      initializeAdminAppSingleton(); // Attempt to initialize if not already
+    }
+    if (!adminInstance) { // Check again after attempt
+      // console.error("[Admin SDK - getDb] Admin SDK not initialized. Returning null for Firestore.", initializationError ? `Reason: ${initializationError.message}` : "Reason: adminInstance is null post-init attempt.");
+      return null;
+    }
   }
-  // adminInstance is guaranteed to be non-null here by isAdminInitialized logic
-  return adminInstance!.firestore();
+  return adminInstance.firestore();
 }
 
 export function getAuthAdmin(): admin.auth.Auth | null {
-  if (!isAdminInitialized()) {
-    // console.error("[Admin SDK - getAuthAdmin] Cannot get Auth instance: Admin SDK not initialized.");
-    return null;
+  if (!adminInstance) {
+    if (!initializationError) {
+      initializeAdminAppSingleton();
+    }
+    if (!adminInstance) {
+      // console.error("[Admin SDK - getAuthAdmin] Admin SDK not initialized. Returning null for Auth.", initializationError ? `Reason: ${initializationError.message}` : "Reason: adminInstance is null post-init attempt.");
+      return null;
+    }
   }
-  return adminInstance!.auth();
+  return adminInstance.auth();
 }
 
 export function getStorageAdmin(): admin.storage.Storage | null {
-  if (!isAdminInitialized()) {
-    // console.error("[Admin SDK - getStorageAdmin] Cannot get Storage instance: Admin SDK not initialized.");
-    return null;
+  if (!adminInstance) {
+    if (!initializationError) {
+      initializeAdminAppSingleton();
+    }
+    if (!adminInstance) {
+      // console.error("[Admin SDK - getStorageAdmin] Admin SDK not initialized. Returning null for Storage.", initializationError ? `Reason: ${initializationError.message}` : "Reason: adminInstance is null post-init attempt.");
+      return null;
+    }
   }
-  return adminInstance!.storage();
+  return adminInstance.storage();
 }
 
 export const FieldValue = admin.firestore.FieldValue;
 export const AdminTimestamp = admin.firestore.Timestamp;
 export type { Timestamp as AdminTimestampType } from 'firebase-admin/firestore';
 export { admin };
+
+    

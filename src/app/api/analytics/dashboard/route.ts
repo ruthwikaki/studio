@@ -1,9 +1,10 @@
 
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { getDb, AdminTimestamp, isAdminInitialized } from '@/lib/firebase/admin';
+import { getDb, AdminTimestamp, isAdminInitialized, getInitializationError } from '@/lib/firebase/admin';
 import { verifyAuthToken } from '@/lib/firebase/admin-auth';
 import type { InventoryStockDocument, OrderDocument, SalesHistoryDocument, DailyAggregateDocument } from '@/lib/types/firestore';
+import { admin } from '@/lib/firebase/admin'; // For admin.firestore.Timestamp
 
 export const revalidate = 300; // Revalidate every 5 minutes
 
@@ -24,19 +25,22 @@ export async function GET(request: NextRequest) {
   let userId: string;
 
   if (!isAdminInitialized()) {
-    console.error("[Analytics Dashboard API] Firebase Admin SDK not initialized at entry.");
-    // This error indicates a problem with service-account-key.json or the admin.ts initialization itself.
-    return NextResponse.json({ error: "Server configuration error: Firebase Admin SDK not initialized. Check server logs for details on 'service-account-key.json'." }, { status: 500 });
+    const initErrorMsg = getInitializationError(); // Get the specific error
+    console.error(`[Analytics Dashboard API] Firebase Admin SDK not initialized at entry. Detailed Error: ${initErrorMsg || 'Unknown initialization error. Check server startup logs from admin.ts.'}`);
+    // Return the specific error message to the client
+    return NextResponse.json({ error: `Server configuration error: Firebase Admin SDK not initialized. Reason: ${initErrorMsg || 'Please check server startup logs for details, likely related to service-account-key.json.'}` }, { status: 500 });
   }
 
-  const db = getDb(); // Call the getter function
+  const db = getDb();
   if (!db) {
-    console.error("[Analytics Dashboard API] Firestore instance (db) is null after SDK initialization check. This is unexpected.");
-    return NextResponse.json({ error: "Server configuration error: Firestore instance is not available. Admin SDK might have failed post-check." }, { status: 500 });
+    const initErrorMsg = getInitializationError(); // Get the specific error
+    console.error(`[Analytics Dashboard API] Firestore instance (db) is null. Detailed Error: ${initErrorMsg || 'Unknown initialization error causing db to be null.'}`);
+    // Return the specific error message to the client
+    return NextResponse.json({ error: `Server configuration error: Firestore instance is not available. Reason: ${initErrorMsg || 'Please check server startup logs.'}` }, { status: 500 });
   }
 
   try {
-    const authResult = await verifyAuthToken(request); // This now has more logging
+    const authResult = await verifyAuthToken(request); 
     companyId = authResult.companyId;
     userId = authResult.uid;
     console.log(`[Analytics Dashboard API] Authenticated successfully. User ID: ${userId}, Company ID: ${companyId}`);
@@ -136,8 +140,8 @@ export async function GET(request: NextRequest) {
 
       const salesTodaySnapshot = await db.collection('sales_history')
                                           .where('companyId', '==', companyId)
-                                          .where('date', '>=', AdminTimestamp.fromDate(todayStartForSales))
-                                          .where('date', '<', AdminTimestamp.fromDate(tomorrowStartForSales))
+                                          .where('date', '>=', admin.firestore.Timestamp.fromDate(todayStartForSales))
+                                          .where('date', '<', admin.firestore.Timestamp.fromDate(tomorrowStartForSales))
                                           .where('deletedAt', '==', null)
                                           .get();
       let todaysRevenue = 0;
@@ -174,3 +178,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: errorMessage, details: error.stack ? error.stack.substring(0, 500) + "..." : "No stack trace available" }, { status: 500 });
   }
 }
+
+    
