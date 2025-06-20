@@ -24,7 +24,7 @@ export type NavItem = {
   href: string;
   label: string;
   icon: LucideIcon;
-  matchSegments?: number; 
+  matchSegments?: number;
 };
 
 export const NAV_ITEMS: NavItem[] = [
@@ -39,7 +39,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/settings', label: 'Settings', icon: Settings, matchSegments: 1 },
 ];
 
-export const APP_NAME = "ARIA";
+export const APP_NAME = "ARIA"; // Ensuring this is ARIA
 export const APP_LOGO_ICON = Box; // Main app logo
 
 // Icons for specific UI elements not in NAV_ITEMS
@@ -63,7 +63,5 @@ export const MOCK_INVENTORY_DATA = [
 ];
 
 export const MOCK_INVENTORY_JSON_STRING = JSON.stringify(MOCK_INVENTORY_DATA.map(({ status, ...rest }) => rest), null, 2); // For AI Chat, remove dynamic status
-
     
-
     
