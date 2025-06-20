@@ -177,3 +177,4 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: errorMessage, details: error.stack ? error.stack.substring(0, 500) + "..." : "No stack trace available" }, { status: 500 });
   }
 }
+    
