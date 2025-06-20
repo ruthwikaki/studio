@@ -52,7 +52,14 @@ export default function DashboardPage() {
     <div className="flex flex-col gap-6">
       <h1 className="text-3xl font-headline font-semibold text-foreground">Dashboard Overview</h1>
       
-      {kpisError && <Card className="bg-destructive/10 border-destructive"><CardContent className="p-4 text-destructive-foreground">{kpisFetchError?.message || "Error loading dashboard KPIs."}</CardContent></Card>}
+      {kpisError && (
+        <Card className="bg-destructive/10 border-destructive">
+          <CardContent className="p-4 text-destructive-foreground">
+            <p className="font-semibold">Failed to fetch dashboard KPIs</p>
+            <p className="text-sm">{kpisFetchError?.message || "An unknown error occurred while fetching dashboard data."}</p>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {kpisLoading ? (
@@ -62,37 +69,43 @@ export default function DashboardPage() {
             <DashboardCard title="Out of Stock Items"><Skeleton className="h-8 w-1/2 mt-1" /><Skeleton className="h-4 w-3/4 mt-1" /></DashboardCard>
             <DashboardCard title="Pending Orders"><Skeleton className="h-8 w-1/2 mt-1" /><Skeleton className="h-4 w-1/2 mt-1" /></DashboardCard>
           </>
-        ) : (
+        ) : kpis ? ( // Only render if kpis exist (and no error)
           <>
             <DashboardCard
               title="Total Inventory Value"
               icon={DollarSign}
-              value={kpis?.totalInventoryValue !== undefined ? `$${kpis.totalInventoryValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : <Skeleton className="h-8 w-3/4 mt-1" />}
+              value={kpis?.totalInventoryValue !== undefined ? `$${kpis.totalInventoryValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : "N/A"}
               description={kpis?.turnoverRate !== undefined ? `Turnover: ${kpis.turnoverRate.toFixed(1)}x` : "Valuation of current stock."}
             />
             <DashboardCard
               title="Low Stock Items"
               icon={AlertTriangle}
-              value={kpis?.lowStockItemsCount ?? <Skeleton className="h-8 w-1/2 mt-1" />}
+              value={kpis?.lowStockItemsCount ?? "N/A"}
               description={`${kpis?.lowStockItemsCount || 0} items below reorder point`}
               valueClassName={kpis && kpis.lowStockItemsCount > 0 ? "text-warning" : "text-success"}
             />
              <DashboardCard
               title="Out of Stock Items"
               icon={Archive}
-              value={kpis?.outOfStockItemsCount ?? <Skeleton className="h-8 w-1/2 mt-1" />}
+              value={kpis?.outOfStockItemsCount ?? "N/A"}
               description={`${kpis?.outOfStockItemsCount || 0} items completely out`}
               valueClassName={kpis && kpis.outOfStockItemsCount > 0 ? "text-destructive" : "text-success"}
             />
             <DashboardCard
               title="Pending Orders"
               icon={kpis?.pendingOrdersCount === 0 ? PackageCheck : ClipboardList}
-              value={kpis?.pendingOrdersCount ?? <Skeleton className="h-8 w-1/2 mt-1" />}
+              value={kpis?.pendingOrdersCount ?? "N/A"}
               description={kpis?.pendingOrdersCount === 1 ? "Order awaiting action" : "Orders awaiting action"}
               valueClassName={kpis && kpis.pendingOrdersCount > 0 ? "text-blue-500" : "text-muted-foreground"}
             />
           </>
-        )}
+        ) : !kpisError ? ( // If not loading, no kpis, and no error, show general message
+            <Card className="md:col-span-4">
+                <CardContent className="p-4 text-center text-muted-foreground">
+                    No dashboard data available at the moment. Try seeding data or check API logs.
+                </CardContent>
+            </Card>
+        ) : null /* Error is handled above */ }
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -202,3 +215,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+

@@ -17,14 +17,23 @@ interface DashboardKPIs {
   todaysRevenue: number;
   inventoryValueByCategory?: Record<string, number>;
   lastUpdated: string;
-  turnoverRate?: number; // Added from previous update
+  turnoverRate?: number;
 }
 
 const fetchDashboardKPIs = async (): Promise<{ data: DashboardKPIs, source: string }> => {
   const response = await fetch('/api/analytics/dashboard');
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ error: 'Failed to fetch dashboard KPIs' }));
-    throw new Error(errorData.error || 'Failed to fetch dashboard KPIs');
+    let errorMsg = 'Failed to fetch dashboard KPIs';
+    try {
+      const errorData = await response.json();
+      errorMsg = errorData.error || errorData.message || errorMsg;
+      if (errorData.details) {
+        errorMsg += ` Details: ${typeof errorData.details === 'string' ? errorData.details : JSON.stringify(errorData.details)}`;
+      }
+    } catch (e) {
+      // Failed to parse error JSON, use default message
+    }
+    throw new Error(errorMsg);
   }
   return response.json();
 };
@@ -81,3 +90,4 @@ export function useGenerateDemandForecast() {
     },
   });
 }
+
