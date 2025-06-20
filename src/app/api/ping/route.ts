@@ -2,7 +2,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-console.log('[API /api/ping/route.ts] File loaded by Next.js runtime. This is a critical diagnostic log.');
+console.log('[API /api/ping/route.ts] File loaded by Next.js runtime.');
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;

@@ -2,17 +2,18 @@
 // src/middleware.ts
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { verifyAuthToken, VerifiedUser } from '@/lib/firebase/admin-auth';
 
 export const runtime = 'nodejs'; // Force Node.js runtime instead of edge
 
 console.log('[Middleware] Module loaded.');
 
-export async function middleware(request: NextRequest) {
+export function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
-  console.log(`[Middleware] API request to: ${pathname}, Method: ${request.method}`);
+  console.log(`[Middleware] Request to: ${pathname}, Method: ${request.method}`);
 
   // This middleware now only runs for API routes due to the matcher config below.
+  // The 'withAuth' HOC on each API route will handle the actual token verification.
+  // This middleware's primary job is now simplified to logging and passing through.
 
   if (request.method === 'OPTIONS') {
     console.log(`[Middleware] Handling OPTIONS preflight for: ${pathname}`);
@@ -27,39 +28,12 @@ export async function middleware(request: NextRequest) {
     });
   }
 
-  // Public API routes that don't require authentication
-  const publicApiRoutes = ['/api/health', '/api/ping', '/api/auth/register'];
-  if (publicApiRoutes.includes(pathname)) {
-    console.log(`[Middleware] Allowing public access to ${pathname}`);
-    const response = NextResponse.next();
-    response.headers.set('Access-Control-Allow-Origin', '*');
-    return response;
-  }
+  // Pass through the request to be handled by the route handler.
+  const response = NextResponse.next();
+  // Set CORS header for all API responses
+  response.headers.set('Access-Control-Allow-Origin', '*');
   
-  try {
-    console.log(`[Middleware] Verifying auth token for protected route: ${pathname}`);
-    const user: VerifiedUser = await verifyAuthToken(request);
-    console.log(`[Middleware] Auth successful for user: ${user.uid}. Proceeding...`);
-    
-    const requestHeaders = new Headers(request.headers);
-    requestHeaders.set('x-verified-user-uid', user.uid);
-    requestHeaders.set('x-verified-user-companyid', user.companyId);
-    requestHeaders.set('x-verified-user-role', user.role);
-    if (user.email) requestHeaders.set('x-verified-user-email', user.email);
-
-    const response = NextResponse.next({
-      request: { headers: requestHeaders },
-    });
-    response.headers.set('Access-Control-Allow-Origin', '*');
-    return response;
-
-  } catch (error: any) {
-    console.error(`[Middleware] Auth failed for ${pathname}:`, error.message);
-    return NextResponse.json(
-      { error: error.message || 'Authentication failed' },
-      { status: 401, headers: { 'Access-Control-Allow-Origin': '*' } }
-    );
-  }
+  return response;
 }
 
 export const config = {
