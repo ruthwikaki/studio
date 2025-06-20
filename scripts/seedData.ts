@@ -11,17 +11,11 @@ import type {
 
 // --- Project ID Check (for logging purposes only, using the imported admin object) ---
 let sdkProjectId: string | undefined;
-let firestoreDbId: string | undefined;
 
 if (admin.apps.length > 0 && admin.app().options && admin.app().options.projectId) {
     sdkProjectId = admin.app().options.projectId;
-    // Attempt to get the databaseId from the db instance.
-    // Note: The Firebase Admin SDK's Firestore client doesn't directly expose a `databaseId` property easily.
-    // We know it's 'ariadb' because we set it in admin.ts
-    firestoreDbId = (db as any)._settings?.databaseId || 'ariadb'; // Accessing private property for logging if needed, or hardcode known ID.
-                                                                // Or, better, if your admin.ts exports the TARGET_DATABASE_ID, use that.
-    console.log(`[Seed Script] Firebase Admin SDK appears to be initialized by admin.ts. Project ID from SDK: ${sdkProjectId}, Target Database ID: ${firestoreDbId}`);
-    
+    console.log(`[Seed Script] Firebase Admin SDK appears to be initialized by admin.ts. Project ID from SDK: ${sdkProjectId}`);
+
     const expectedProjectId = "aria-jknbu"; // Define your expected project ID
     if (sdkProjectId !== expectedProjectId) {
         console.warn(`[Seed Script] WARNING: Initialized Admin SDK is for project '${sdkProjectId}', but expected '${expectedProjectId}'. Make sure this is intentional, and that 'service-account-key.json' in the project root corresponds to '${expectedProjectId}'.`);
@@ -355,7 +349,7 @@ const mockChatSessions: (Omit<ChatSessionDocument, 'id' | 'createdAt' | 'lastMes
 
 const mockDailyAggregate: Omit<DailyAggregateDocument, 'id' | 'date' | 'lastCalculated'> & { date: Date; lastCalculated: Date } = {
   companyId: MOCK_COMPANY_ID,
-  date: new Date(), 
+  date: new Date(),
   totalInventoryValue: mockInventoryStock.reduce((sum, item) => sum + (item.quantity * item.unitCost), 0),
   lowStockItemsCount: mockInventoryStock.filter(item => item.quantity <= item.reorderPoint && item.reorderPoint > 0).length,
   outOfStockItemsCount: mockInventoryStock.filter(item => item.quantity === 0).length,
@@ -379,37 +373,36 @@ const mockDailyAggregate: Omit<DailyAggregateDocument, 'id' | 'date' | 'lastCalc
 
 
 async function seedDatabase() {
-  console.log(`[Seed Script] Using Project ID for Firestore operations: ${sdkProjectId}, Target Database ID: ${firestoreDbId}`);
-  if (!sdkProjectId || !firestoreDbId) {
-    console.error("[Seed Script] CRITICAL: Project ID or Target Database ID is undefined. Cannot proceed with Firestore operations.");
+  console.log(`[Seed Script] Using Project ID for Firestore operations: ${sdkProjectId}`);
+  if (!sdkProjectId) {
+    console.error("[Seed Script] CRITICAL: Project ID is undefined. Cannot proceed with Firestore operations.");
     process.exit(1);
   }
 
   try {
-    // Diagnostic: Attempt a single simple write
-    console.log(`[Seed Script] Attempting a diagnostic write to project ${sdkProjectId}, database ${firestoreDbId}...`);
-    const diagnosticDocRef = db.collection('_seed_diagnostics').doc(`test_write_project_${sdkProjectId}_db_${firestoreDbId}_${Date.now()}`);
-    await diagnosticDocRef.set({ 
-        timestamp: FieldValue.serverTimestamp(), 
-        message: `Seed script diagnostic write for project ${sdkProjectId} to database ${firestoreDbId}`,
+    // Diagnostic: Attempt a single simple write to the (default) database
+    console.log(`[Seed Script] Attempting a diagnostic write to project ${sdkProjectId}, (default) database...`);
+    const diagnosticDocRef = db.collection('_seed_diagnostics').doc(`test_write_default_db_${Date.now()}`);
+    await diagnosticDocRef.set({
+        timestamp: FieldValue.serverTimestamp(),
+        message: `Seed script diagnostic write for project ${sdkProjectId} to (default) database`,
         sdkInitializedProjectId: sdkProjectId,
-        targetDatabaseId: firestoreDbId,
     });
-    console.log(`[Seed Script] Diagnostic write SUCCESSFUL to collection '_seed_diagnostics' in database ${firestoreDbId}.`);
+    console.log(`[Seed Script] Diagnostic write SUCCESSFUL to collection '_seed_diagnostics' in (default) database.`);
   } catch (diagError: any) {
-    console.error(`[Seed Script] CRITICAL ERROR during diagnostic write to database ${firestoreDbId}:`, diagError);
-    console.error("  This means basic Firestore write operations are failing for the target database.");
+    console.error(`[Seed Script] CRITICAL ERROR during diagnostic write to (default) database:`, diagError);
+    console.error("  This means basic Firestore write operations are failing for the (default) database.");
     console.error("  Please re-verify:");
     console.error("  1. Cloud Firestore API is enabled in Google Cloud Console for project:", sdkProjectId);
     console.error("  2. The service account has 'Cloud Datastore User' or 'Editor' role in IAM for project:", sdkProjectId);
     console.error("  3. The project has an active billing account linked.");
-    console.error("  4. The database ID '"+firestoreDbId+"' exists and is provisioned in a region for project "+sdkProjectId+".");
+    console.error("  4. The (default) database exists and is provisioned in a region for project "+sdkProjectId+" (check GCP Console > Firestore).");
     console.error("  Details from diagnostic error:", diagError.message);
     console.error("  Code:", diagError.code);
     process.exit(1);
   }
 
-  console.log(`Connecting to Firestore database: ${firestoreDbId}...`);
+  console.log(`Connecting to Firestore (default) database...`);
   const batch = db.batch();
 
   console.log("Seeding data to Firestore collections:");
@@ -471,8 +464,8 @@ async function seedDatabase() {
     const salesHistoryData = {
       ...sh,
       date: AdminTimestamp.fromDate(sh.date),
-      orderId: sh.orderId, 
-      customerId: sh.customerId, 
+      orderId: sh.orderId,
+      customerId: sh.customerId,
       deletedAt: null
     };
     batch.set(shDocRef, salesHistoryData);
@@ -529,14 +522,14 @@ async function seedDatabase() {
 
   try {
     await batch.commit();
-    console.log(`[Seed Script] Batch commit successful. Database ${firestoreDbId} seeded.`);
+    console.log(`[Seed Script] Batch commit successful. (Default) database seeded.`);
   } catch (error: any) {
-    console.error(`[Seed Script] Error committing batch to database ${firestoreDbId}:`, error);
+    console.error(`[Seed Script] Error committing batch to (default) database:`, error);
     console.error("--------------------------------------------------------------------");
     const currentProjectIdForErrorLog = sdkProjectId || 'UNKNOWN (SDK Project ID not readable during init check)';
-    console.error(`  TROUBLESHOOTING: If you see 'NOT_FOUND' or permission errors for project '${currentProjectIdForErrorLog}' and database '${firestoreDbId}':`);
-    console.error(`  1. Ensure your Firebase project '${currentProjectIdForErrorLog}' has Firestore enabled and the database '${firestoreDbId}' exists and is in a provisioned region.`);
-    console.error("     Go to Firebase Console -> Firestore Database. Verify the database ID and its region.");
+    console.error(`  TROUBLESHOOTING: If you see 'NOT_FOUND' or permission errors for project '${currentProjectIdForErrorLog}' and (default) database:`);
+    console.error(`  1. Ensure your Firebase project '${currentProjectIdForErrorLog}' has Firestore enabled and the (default) database exists and is in a provisioned region (e.g., ${process.env.GOOGLE_CLOUD_REGION || 'your_project_region'}).`);
+    console.error("     Go to Firebase Console -> Firestore Database. Verify the (default) database ID and its region.");
     console.error("  2. Ensure the service account key being used ('service-account-key.json' in project root) has appropriate permissions (e.g., 'Owner' or 'Firebase Admin' or 'Cloud Datastore User') for the project it belongs to.");
     console.error("  Details from error:", error.message);
     console.error("  Code:", error.code);
@@ -551,4 +544,3 @@ seedDatabase().catch(error => {
 });
 
 
-    

@@ -5,7 +5,6 @@ import * as path from 'path';
 
 // Construct an absolute path to 'service-account-key.json' in the project root
 const serviceAccountPath = path.join(process.cwd(), 'service-account-key.json');
-const TARGET_DATABASE_ID = 'ariadb'; // Specify your target database ID
 
 try {
   if (!admin.apps.length) {
@@ -23,15 +22,14 @@ try {
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
       projectId: serviceAccount.project_id,
-      // databaseId: TARGET_DATABASE_ID // This is NOT for specifying Firestore database ID
     });
-    console.log(`Firebase Admin SDK initialized in admin.ts for project: ${serviceAccount.project_id}, using key from project root.`);
+    console.log(`Firebase Admin SDK initialized in admin.ts for project: ${serviceAccount.project_id}, using key from project root. Targeting (default) Firestore database.`);
   } else {
     const currentApp = admin.app();
     if (currentApp && currentApp.options && currentApp.options.projectId) {
-        console.log(`Firebase Admin SDK already initialized for project: ${currentApp.options.projectId}`);
+        console.log(`Firebase Admin SDK already initialized for project: ${currentApp.options.projectId}. Targeting (default) Firestore database.`);
     } else {
-        console.warn("Firebase Admin SDK was already initialized, but project ID could not be determined from the existing app instance. This might indicate an issue.");
+        console.warn("Firebase Admin SDK was already initialized, but project ID could not be determined from the existing app instance. This might indicate an issue. Targeting (default) Firestore database.");
     }
   }
 } catch (error: any) {
@@ -54,9 +52,9 @@ try {
   console.error("--------------------------------------------------------------------");
 }
 
-// Get Firestore instance for the specified database ID
-export const db = admin.firestore(admin.apps[0], TARGET_DATABASE_ID); // Pass app instance and database ID
-console.log(`[Admin SDK] Firestore instance configured for database: ${TARGET_DATABASE_ID}`);
+// Get Firestore instance for the (default) database
+export const db = admin.firestore();
+console.log(`[Admin SDK] Firestore instance configured for (default) database.`);
 
 export const authAdmin = admin.auth();
 export const storageAdmin = admin.storage();
