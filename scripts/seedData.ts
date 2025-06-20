@@ -6,7 +6,7 @@ import type {
   CompanyDocument, UserDocument, ProductDocument, InventoryStockDocument,
   SupplierDocument, OrderDocument, SalesHistoryDocument, ForecastDocument,
   DocumentMetadata, ChatSessionDocument, ChatMessage, OrderStatus, OrderItem,
-  DailyAggregateDocument
+  DailyAggregateDocument, DiscountTier
 } from '../src/lib/types/firestore';
 
 // --- Project ID Check (for logging purposes only, using the imported admin object) ---
@@ -118,6 +118,19 @@ const mockInventoryStock: (Omit<InventoryStockDocument, 'id' | 'lastUpdated' | '
   lastUpdatedBy: MOCK_USER_ID_MANAGER,
 }));
 
+const laptopDiscountTiers: DiscountTier[] = [
+    { minQuantity: 10, price: 830.00 },
+    { minQuantity: 20, discountPercentage: 5 }, // 5% off base 850 = 807.50 (but lastPrice is 840 so this would be relative to that)
+];
+const monitorDiscountTiers: DiscountTier[] = [
+    { minQuantity: 5, price: 205.00 },
+    { minQuantity: 10, discountPercentage: 3 },
+];
+const mouseDiscountTiers: DiscountTier[] = [
+    { minQuantity: 100, price: 14.50 },
+    { minQuantity: 200, discountPercentage: 5 }, // 5% off base 15.50 = 14.725
+];
+
 
 const mockSuppliersRaw: (Omit<SupplierDocument, 'id' | 'companyId' | 'createdAt' | 'lastUpdated' | 'deletedAt'>)[] = [
   {
@@ -128,8 +141,8 @@ const mockSuppliersRaw: (Omit<SupplierDocument, 'id' | 'companyId' | 'createdAt'
     reliabilityScore: 92,
     paymentTerms: 'Net 30',
     productsSupplied: [
-      { productId: MOCK_PRODUCT_IDS["LAPTOP001"], sku: 'LAPTOP001', name: '15in Pro Laptop', lastPrice: 840.00, moqForItem: 5 },
-      { productId: MOCK_PRODUCT_IDS["MONITOR01"], sku: 'MONITOR01', name: '27in 4K Monitor', lastPrice: 210.00, moqForItem: 3 },
+      { productId: MOCK_PRODUCT_IDS["LAPTOP001"], sku: 'LAPTOP001', name: '15in Pro Laptop', lastPrice: 840.00, moqForItem: 5, discountTiers: laptopDiscountTiers },
+      { productId: MOCK_PRODUCT_IDS["MONITOR01"], sku: 'MONITOR01', name: '27in 4K Monitor', lastPrice: 210.00, moqForItem: 3, discountTiers: monitorDiscountTiers },
     ],
     createdBy: MOCK_USER_ID_MANAGER,
     logoUrl: 'https://placehold.co/60x60.png?text=EL'
@@ -142,7 +155,7 @@ const mockSuppliersRaw: (Omit<SupplierDocument, 'id' | 'companyId' | 'createdAt'
     reliabilityScore: 85,
     paymentTerms: 'Net 15',
     productsSupplied: [
-      { productId: MOCK_PRODUCT_IDS["MOUSE002"], sku: 'MOUSE002', name: 'Wireless Ergonomic Mouse', lastPrice: 15.00, moqForItem: 50 },
+      { productId: MOCK_PRODUCT_IDS["MOUSE002"], sku: 'MOUSE002', name: 'Wireless Ergonomic Mouse', lastPrice: 15.00, moqForItem: 50, discountTiers: mouseDiscountTiers },
       { productId: MOCK_PRODUCT_IDS["KEYB003"], sku: 'KEYB003', name: 'Mechanical Keyboard', lastPrice: 40.00, moqForItem: 20 },
       { productId: MOCK_PRODUCT_IDS["TSHIRT001"], sku: 'TSHIRT001', name: 'Organic Cotton T-Shirt', lastPrice: 7.50, moqForItem: 100 },
     ],

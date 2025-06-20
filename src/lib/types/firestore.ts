@@ -103,6 +103,9 @@ export interface InventoryStockDocument {
   leadTimeDays?: number; // Specific lead time for this item if different from supplier default
   onOrderQuantity?: number; // Quantity currently on order from suppliers
   deletedAt?: Timestamp; // For soft deletes
+  abcCategory?: 'A' | 'B' | 'C'; // Optional: For storing ABC analysis result
+  isDeadStock?: boolean; // Optional: Flag for dead stock
+  isOverstocked?: boolean; // Optional: Flag for overstocked items
 }
 
 // --------------------
@@ -122,12 +125,19 @@ export interface SupplierContactPerson {
   phone?: string;
 }
 
+export interface DiscountTier {
+  minQuantity: number;
+  price?: number; // Absolute price at this quantity
+  discountPercentage?: number; // Percentage discount from a base price
+}
+
 export interface SupplierProductInfo {
   productId: string; // Reference to ProductDocument.id (master product SKU)
   sku: string; // Denormalized SKU
   name: string; // Denormalized product name
   lastPrice?: number; // Last price paid to this supplier for this product
   moqForItem?: number; // Minimum order quantity for this specific item from this supplier
+  discountTiers?: DiscountTier[]; // For bulk purchasing
 }
 
 export interface SupplierDocument {
@@ -533,4 +543,17 @@ export interface DocumentOcrExtractionJobPayload {
     documentId: string; // ID of the document in 'documents' collection
     fileUrl: string;    // URL of the file in storage
     documentTypeHint?: string;
+}
+
+// Team Invitations (Optional - New Collection)
+export interface InvitationDocument {
+  id: string;
+  companyId: string;
+  email: string; // Email of the person being invited
+  role: UserRole; // Role to be assigned upon acceptance
+  status: 'pending' | 'accepted' | 'declined' | 'expired';
+  invitedBy: string; // UID of the user who sent the invitation
+  createdAt: Timestamp;
+  expiresAt?: Timestamp;
+  acceptedAt?: Timestamp;
 }
