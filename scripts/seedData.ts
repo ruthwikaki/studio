@@ -41,14 +41,14 @@ if (admin.apps.length > 0 && admin.app().options && admin.app().options.projectI
 
 console.log("--- Data Seeding Script for ARIA ---");
 
-const MOCK_COMPANY_ID = 'comp_aria_seed_001';
+const MOCK_COMPANY_ID = 'comp_seed_co_001'; // Changed to be more generic
 const MOCK_USER_ID_OWNER = 'user_owner_seed_001';
 const MOCK_USER_ID_MANAGER = 'user_manager_seed_001';
 const MOCK_PRODUCT_IDS: Record<string, string> = {};
 
 const mockCompany: Omit<CompanyDocument, 'id' | 'createdAt'> & { id: string, createdAt: Date } = {
   id: MOCK_COMPANY_ID,
-  name: 'ARIA Seed Co.',
+  name: 'Seed Supply Co.', // Changed from "ARIA Seed Co."
   plan: 'pro',
   createdAt: new Date(),
   settings: { timezone: 'America/New_York', currency: 'USD' },
@@ -58,18 +58,18 @@ const mockCompany: Omit<CompanyDocument, 'id' | 'createdAt'> & { id: string, cre
 const mockUsers: (Omit<UserDocument, 'uid' | 'createdAt'> & { uid: string, createdAt: Date })[] = [
   {
     uid: MOCK_USER_ID_OWNER,
-    email: 'owner@ariaseed.example.com',
+    email: 'owner@seedsupply.example.com', // Kept generic email
     companyId: MOCK_COMPANY_ID,
     role: 'owner',
-    displayName: 'ARIA Owner',
+    displayName: 'Seed Co. Owner', // Adjusted display name
     createdAt: new Date(),
   },
   {
     uid: MOCK_USER_ID_MANAGER,
-    email: 'manager@ariaseed.example.com',
+    email: 'manager@seedsupply.example.com', // Kept generic email
     companyId: MOCK_COMPANY_ID,
     role: 'manager',
-    displayName: 'ARIA Manager',
+    displayName: 'Seed Co. Manager', // Adjusted display name
     createdAt: new Date(),
   },
 ];
@@ -555,3 +555,6 @@ seedDatabase().catch(error => {
   console.error("[Seed Script] Unhandled error during seeding:", error);
   process.exit(1);
 });
+
+
+    
