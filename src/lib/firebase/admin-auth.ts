@@ -5,9 +5,9 @@ import { authAdmin, db, AdminTimestamp } from './admin';
 import type { UserDocument, UserRole, UserCacheDocument } from '@/lib/types/firestore';
 import { NextResponse } from 'next/server';
 
-const MOCK_USER_ID = 'user_owner_seed_001'; 
+const MOCK_USER_ID = 'user_owner_seed_001';
 const MOCK_COMPANY_ID = 'comp_seed_co_001'; // Standardized ID
-const MOCK_EMAIL = 'owner@seedsupply.example.com'; 
+const MOCK_EMAIL = 'owner@seedsupply.example.com';
 const MOCK_ROLE: UserRole = 'owner';
 
 // In-memory cache for user data
@@ -16,7 +16,7 @@ interface CachedUserData {
   role: UserRole;
   email?: string | null;
   displayName?: string | null;
-  lastFetched: number; 
+  lastFetched: number;
 }
 const userCache = new Map<string, CachedUserData>();
 const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
@@ -30,15 +30,19 @@ export interface VerifiedUser {
 }
 
 async function fetchAndCacheUserData(uid: string): Promise<VerifiedUser | null> {
+  console.log(`[Admin Auth] fetchAndCacheUserData: Attempting to fetch user data for UID: ${uid}`);
   try {
     const userDocRef = db.collection('users').doc(uid);
     const userDocSnap = await userDocRef.get();
 
     if (!userDocSnap.exists) {
-      console.warn(`[Admin Auth] User document not found in Firestore for UID: ${uid}`);
+      console.warn(`[Admin Auth] fetchAndCacheUserData: User document not found in Firestore for UID: ${uid}`);
       return null;
     }
     const userData = userDocSnap.data() as UserDocument;
+    if (userData.companyId !== MOCK_COMPANY_ID && uid === MOCK_USER_ID) {
+        console.warn(`[Admin Auth] fetchAndCacheUserData: CRITICAL MISMATCH! Mock user ${MOCK_USER_ID} in Firestore has companyId '${userData.companyId}', but MOCK_COMPANY_ID is '${MOCK_COMPANY_ID}'. This will cause data loading issues.`);
+    }
     const verifiedUser: VerifiedUser = {
       uid,
       companyId: userData.companyId,
@@ -47,10 +51,10 @@ async function fetchAndCacheUserData(uid: string): Promise<VerifiedUser | null> 
       displayName: userData.displayName,
     };
     userCache.set(uid, { ...verifiedUser, lastFetched: Date.now() });
-    console.log(`[Admin Auth] Fetched and cached user data for UID: ${uid}, Company ID: ${userData.companyId}`);
+    console.log(`[Admin Auth] fetchAndCacheUserData: Successfully fetched and cached user data for UID: ${uid}, Company ID: ${userData.companyId}, Role: ${userData.role}`);
     return verifiedUser;
   } catch (error) {
-    console.error(`[Admin Auth] Error fetching user data from Firestore for UID ${uid}:`, error);
+    console.error(`[Admin Auth] fetchAndCacheUserData: Error fetching user data from Firestore for UID ${uid}:`, error);
     return null;
   }
 }
@@ -58,10 +62,10 @@ async function fetchAndCacheUserData(uid: string): Promise<VerifiedUser | null> 
 async function getVerifiedUser(uid: string): Promise<VerifiedUser | null> {
   const cached = userCache.get(uid);
   if (cached && (Date.now() - cached.lastFetched < CACHE_DURATION_MS)) {
-    console.log(`[Admin Auth] Using cached user data for UID: ${uid}, Company ID: ${cached.companyId}`);
+    console.log(`[Admin Auth] getVerifiedUser: Using cached user data for UID: ${uid}, Company ID: ${cached.companyId}`);
     return { uid, companyId: cached.companyId, role: cached.role, email: cached.email, displayName: cached.displayName };
   }
-  console.log(`[Admin Auth] Cache miss or expired for UID: ${uid}. Fetching from Firestore.`);
+  console.log(`[Admin Auth] getVerifiedUser: Cache miss or expired for UID: ${uid}. Fetching from Firestore.`);
   return fetchAndCacheUserData(uid);
 }
 
@@ -73,25 +77,32 @@ export async function verifyAuthToken(request: NextRequest): Promise<VerifiedUse
   if (!token) {
     console.warn('[Admin Auth] verifyAuthToken: No token provided. Using mock user for development.');
     if (process.env.NODE_ENV === 'development') {
-        const mockUserFromDb = await getVerifiedUser(MOCK_USER_ID); 
+        console.log(`[Admin Auth] verifyAuthToken: Attempting to get mock user (MOCK_USER_ID: ${MOCK_USER_ID}).`);
+        const mockUserFromDb = await getVerifiedUser(MOCK_USER_ID);
         if (mockUserFromDb) {
-            console.log(`[Admin Auth] verifyAuthToken: Using mock user from DB: UID ${mockUserFromDb.uid}, Company ID ${mockUserFromDb.companyId}`);
+            if (mockUserFromDb.companyId !== MOCK_COMPANY_ID) {
+                 console.error(`[Admin Auth] verifyAuthToken: CRITICAL MISMATCH! Mock user ${MOCK_USER_ID} from DB has companyId '${mockUserFromDb.companyId}' which does NOT match expected MOCK_COMPANY_ID '${MOCK_COMPANY_ID}'. Ensure seed data and admin-auth.ts use the same MOCK_COMPANY_ID.`);
+            }
+            console.log(`[Admin Auth] verifyAuthToken: Using mock user from DB: UID ${mockUserFromDb.uid}, Company ID ${mockUserFromDb.companyId}, Role: ${mockUserFromDb.role}`);
             return mockUserFromDb;
         }
         // Fallback if mock user not in DB (e.g., pre-seed)
-        console.warn(`[Admin Auth] verifyAuthToken: Mock user ${MOCK_USER_ID} not found in DB, using hardcoded mock details.`);
+        console.warn(`[Admin Auth] verifyAuthToken: Mock user ${MOCK_USER_ID} not found in DB, using hardcoded mock details (Company ID: ${MOCK_COMPANY_ID}). Ensure seed script has run with this company ID.`);
         return { uid: MOCK_USER_ID, companyId: MOCK_COMPANY_ID, role: MOCK_ROLE, email: MOCK_EMAIL };
     }
     throw new Error('No authorization token provided.');
   }
 
   try {
+    console.log('[Admin Auth] verifyAuthToken: Received a token, attempting to verify with Firebase Admin SDK.');
     const decodedToken = await authAdmin.verifyIdToken(token);
+    console.log(`[Admin Auth] verifyAuthToken: Token successfully decoded for UID: ${decodedToken.uid}. Fetching user details...`);
     const verifiedUser = await getVerifiedUser(decodedToken.uid);
     if (!verifiedUser) {
+        console.error(`[Admin Auth] verifyAuthToken: User data not found in Firestore for UID: ${decodedToken.uid} after token verification.`);
         throw new Error(`User data not found for UID: ${decodedToken.uid}`);
     }
-    console.log(`[Admin Auth] verifyAuthToken: Token verified for UID ${verifiedUser.uid}, Company ID ${verifiedUser.companyId}`);
+    console.log(`[Admin Auth] verifyAuthToken: Token verified for UID ${verifiedUser.uid}, Company ID ${verifiedUser.companyId}, Role: ${verifiedUser.role}`);
     return verifiedUser;
   } catch (error: any) {
     console.error('[Admin Auth] Error verifying Firebase ID token:', error.message);
@@ -105,13 +116,16 @@ export async function verifyAuthToken(request: NextRequest): Promise<VerifiedUse
 
 export async function verifyAuthTokenOnServerAction(): Promise<VerifiedUser> {
   console.warn("[Admin Auth] verifyAuthTokenOnServerAction: Using MOCK user for development.");
-    const mockUserFromDb = await getVerifiedUser(MOCK_USER_ID);
-    if (mockUserFromDb) {
-        console.log(`[Admin Auth] verifyAuthTokenOnServerAction: Using mock user from DB: UID ${mockUserFromDb.uid}, Company ID ${mockUserFromDb.companyId}`);
-        return mockUserFromDb;
-    }
-    console.warn(`[Admin Auth] verifyAuthTokenOnServerAction: Mock user ${MOCK_USER_ID} not found in DB, using hardcoded mock details.`);
-    return { uid: MOCK_USER_ID, companyId: MOCK_COMPANY_ID, role: MOCK_ROLE, email: MOCK_EMAIL };
+  const mockUserFromDb = await getVerifiedUser(MOCK_USER_ID);
+  if (mockUserFromDb) {
+      if (mockUserFromDb.companyId !== MOCK_COMPANY_ID) {
+        console.error(`[Admin Auth] verifyAuthTokenOnServerAction: CRITICAL MISMATCH! Mock user ${MOCK_USER_ID} from DB has companyId '${mockUserFromDb.companyId}' which does NOT match expected MOCK_COMPANY_ID '${MOCK_COMPANY_ID}'.`);
+      }
+      console.log(`[Admin Auth] verifyAuthTokenOnServerAction: Using mock user from DB: UID ${mockUserFromDb.uid}, Company ID ${mockUserFromDb.companyId}, Role: ${mockUserFromDb.role}`);
+      return mockUserFromDb;
+  }
+  console.warn(`[Admin Auth] verifyAuthTokenOnServerAction: Mock user ${MOCK_USER_ID} not found in DB, using hardcoded mock details (Company ID: ${MOCK_COMPANY_ID}). Ensure seed script has run with this company ID.`);
+  return { uid: MOCK_USER_ID, companyId: MOCK_COMPANY_ID, role: MOCK_ROLE, email: MOCK_EMAIL };
 }
 
 // Higher-order function to wrap API route handlers with authentication
@@ -121,6 +135,7 @@ export function withAuth(handler: (request: NextRequest, context: { params: any 
       const user = await verifyAuthToken(request);
       return await handler(request, context, user);
     } catch (error: any) {
+      console.error(`[Admin Auth] withAuth: Authentication failed for request to ${request.nextUrl.pathname}. Error: ${error.message}`);
       return NextResponse.json({ error: error.message || 'Authentication failed' }, { status: 401 });
     }
   };
@@ -134,7 +149,11 @@ const roleHierarchy: Record<UserRole, number> = {
 };
 
 export function requireRole(currentUserRole: UserRole, minimumRequiredRole: UserRole): boolean {
-  return roleHierarchy[currentUserRole] >= roleHierarchy[minimumRequiredRole];
+  const hasPermission = roleHierarchy[currentUserRole] >= roleHierarchy[minimumRequiredRole];
+  if (!hasPermission) {
+      console.warn(`[Admin Auth] requireRole: Authorization failed. User role '${currentUserRole}' does not meet minimum '${minimumRequiredRole}'.`);
+  }
+  return hasPermission;
 }
 
 // Higher-order function for API routes that require specific roles
@@ -149,4 +168,3 @@ export function withRoleAuthorization(
     return handler(request, context, user);
   });
 }
-

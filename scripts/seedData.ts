@@ -16,7 +16,7 @@ if (admin.apps.length > 0 && admin.app().options && admin.app().options.projectI
     sdkProjectId = admin.app().options.projectId;
     console.log(`[Seed Script] Firebase Admin SDK appears to be initialized by admin.ts. Project ID from SDK: ${sdkProjectId}`);
 
-    const expectedProjectId = "aria-jknbu"; 
+    const expectedProjectId = "aria-jknbu";
     if (sdkProjectId !== expectedProjectId) {
         console.warn(`[Seed Script] WARNING: Initialized Admin SDK is for project '${sdkProjectId}', but expected '${expectedProjectId}'. Make sure this is intentional, and that 'service-account-key.json' in the project root corresponds to '${expectedProjectId}'.`);
     }
@@ -34,21 +34,21 @@ if (admin.apps.length > 0 && admin.app().options && admin.app().options.projectI
   console.error("  Please check the server startup logs for errors from 'admin.ts' related to 'service-account-key.json'.");
   console.error("  The 'service-account-key.json' file must be in the project root directory and be a valid key from your Firebase project.");
   console.error("--------------------------------------------------------------------");
-  process.exit(1); 
+  process.exit(1);
 }
 // ------------------------------------------------------------------
 
 
 console.log("--- Data Seeding Script for ARIA ---");
 
-const MOCK_COMPANY_ID = 'comp_seed_co_001'; // Standardized ID
+const MOCK_COMPANY_ID = 'comp_seed_co_001'; // Standardized ID for Seed Supply Co. using ARIA
 const MOCK_USER_ID_OWNER = 'user_owner_seed_001';
 const MOCK_USER_ID_MANAGER = 'user_manager_seed_001';
 const MOCK_PRODUCT_IDS: Record<string, string> = {};
-const STORAGE_BUCKET_NAME = 'aria-jknbu.appspot.com'; 
+const STORAGE_BUCKET_NAME = 'aria-jknbu.appspot.com';
 
 const mockCompany: Omit<CompanyDocument, 'id' | 'createdAt'> & { id: string, createdAt: Date } = {
-  id: MOCK_COMPANY_ID, // Uses standardized ID
+  id: MOCK_COMPANY_ID,
   name: 'Seed Supply Co.', // Sample company name for the ARIA platform
   plan: 'pro',
   createdAt: new Date(),
@@ -60,7 +60,7 @@ const mockUsers: (Omit<UserDocument, 'uid' | 'createdAt'> & { uid: string, creat
   {
     uid: MOCK_USER_ID_OWNER,
     email: 'owner@seedsupply.example.com',
-    companyId: MOCK_COMPANY_ID, // Uses standardized ID
+    companyId: MOCK_COMPANY_ID,
     role: 'owner',
     displayName: 'Seed Co. Owner',
     createdAt: new Date(),
@@ -68,7 +68,7 @@ const mockUsers: (Omit<UserDocument, 'uid' | 'createdAt'> & { uid: string, creat
   {
     uid: MOCK_USER_ID_MANAGER,
     email: 'manager@seedsupply.example.com',
-    companyId: MOCK_COMPANY_ID, // Uses standardized ID
+    companyId: MOCK_COMPANY_ID,
     role: 'manager',
     displayName: 'Seed Co. Manager',
     createdAt: new Date(),
@@ -90,7 +90,7 @@ const mockProducts: (Omit<ProductDocument, 'id' | 'createdAt' | 'lastUpdated' | 
   MOCK_PRODUCT_IDS[p.sku] = id;
   return {
     id,
-    companyId: MOCK_COMPANY_ID, // Uses standardized ID
+    companyId: MOCK_COMPANY_ID,
     ...p,
     createdAt: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000),
     lastUpdated: new Date(),
@@ -110,7 +110,7 @@ const mockInventoryStockRaw: (Omit<InventoryStockDocument, 'id' | 'companyId' | 
 
 const mockInventoryStock: (Omit<InventoryStockDocument, 'id' | 'lastUpdated' | 'createdAt' | 'createdBy' | 'lastUpdatedBy' | 'deletedAt'> & {id: string, createdAt: Date, lastUpdated: Date, createdBy: string, lastUpdatedBy: string})[] = mockInventoryStockRaw.map((inv, index) => ({
   id: `inv_stock_seed_${String(index + 1).padStart(3, '0')}`,
-  companyId: MOCK_COMPANY_ID, // Uses standardized ID
+  companyId: MOCK_COMPANY_ID,
   productId: MOCK_PRODUCT_IDS[inv.sku],
   ...inv,
   createdAt: new Date(Date.now() - Math.random() * 15 * 24 * 60 * 60 * 1000),
@@ -121,15 +121,15 @@ const mockInventoryStock: (Omit<InventoryStockDocument, 'id' | 'lastUpdated' | '
 
 const laptopDiscountTiers: DiscountTier[] = [
     { minQuantity: 10, price: 830.00 },
-    { minQuantity: 20, discountPercentage: 5 }, 
+    { minQuantity: 20, discountPercentage: 5 },
 ];
 const monitorDiscountTiers: DiscountTier[] = [
     { minQuantity: 5, price: 205.00 },
-    { minQuantity: 10, discountPercentage: 3 }, 
+    { minQuantity: 10, discountPercentage: 3 },
 ];
 const mouseDiscountTiers: DiscountTier[] = [
     { minQuantity: 100, price: 14.50 },
-    { minQuantity: 200, discountPercentage: 5 }, 
+    { minQuantity: 200, discountPercentage: 5 },
 ];
 
 
@@ -167,7 +167,7 @@ const mockSuppliersRaw: (Omit<SupplierDocument, 'id' | 'companyId' | 'createdAt'
 
 const mockSuppliers: (Omit<SupplierDocument, 'id' | 'createdAt' | 'lastUpdated' | 'deletedAt'> & {id: string, createdAt: Date, lastUpdated: Date})[] = mockSuppliersRaw.map((s, index) => ({
   id: `sup_seed_${String(index + 1).padStart(3, '0')}`,
-  companyId: MOCK_COMPANY_ID, // Uses standardized ID
+  companyId: MOCK_COMPANY_ID,
   ...s,
   createdAt: new Date(Date.now() - Math.random() * 60 * 24 * 60 * 60 * 1000),
   lastUpdated: new Date(),
@@ -222,7 +222,7 @@ type MockOrderProcessed = Omit<OrderDocument, 'id' | 'createdAt' | 'lastUpdated'
 
 const mockOrders: MockOrderProcessed[] = mockOrdersRaw.map((o, index) => ({
   id: `ord_seed_${String(index + 1).padStart(3, '0')}`,
-  companyId: MOCK_COMPANY_ID, // Uses standardized ID
+  companyId: MOCK_COMPANY_ID,
   ...o,
   orderDate: o.orderDate,
   expectedDate: o.expectedDate,
@@ -235,23 +235,23 @@ const mockOrders: MockOrderProcessed[] = mockOrdersRaw.map((o, index) => ({
 const mockSalesHistoryRaw: (Omit<SalesHistoryDocument, 'id' | 'companyId' | 'date' | 'productId' | 'deletedAt'> & {skuForLookup: string, orderId?: string, date: Date})[] = [
   { skuForLookup: "MOUSE002", orderId: mockOrders[1].id, date: mockOrders[1].orderDate, quantity: 2, unitPrice: 39.99, revenue: 79.98, costAtTimeOfSale: 15.50 * 2, channel: 'Online Store', customerId: 'cust_retail_001' },
   { skuForLookup: "KEYB003", orderId: mockOrders[1].id, date: mockOrders[1].orderDate, quantity: 1, unitPrice: 89.99, revenue: 89.99, costAtTimeOfSale: 42.00 * 1, channel: 'Online Store', customerId: 'cust_retail_001' },
-  { skuForLookup: "LAPTOP001", date: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000), quantity: 1, unitPrice: 1299.99, revenue: 1299.99, costAtTimeOfSale: 850.00 * 1, channel: 'Direct Sale' }, 
-  { skuForLookup: "TSHIRT001", date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), quantity: 10, unitPrice: 24.99, revenue: 249.90, costAtTimeOfSale: 8.00 * 10, channel: 'Retail POS' }, 
-  { skuForLookup: "TSHIRT001", date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), quantity: 5, unitPrice: 24.99, revenue: 124.95, costAtTimeOfSale: 8.00 * 5, channel: 'Online Store' }, 
+  { skuForLookup: "LAPTOP001", date: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000), quantity: 1, unitPrice: 1299.99, revenue: 1299.99, costAtTimeOfSale: 850.00 * 1, channel: 'Direct Sale' },
+  { skuForLookup: "TSHIRT001", date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), quantity: 10, unitPrice: 24.99, revenue: 249.90, costAtTimeOfSale: 8.00 * 10, channel: 'Retail POS' },
+  { skuForLookup: "TSHIRT001", date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), quantity: 5, unitPrice: 24.99, revenue: 124.95, costAtTimeOfSale: 8.00 * 5, channel: 'Online Store' },
 ];
 
 const mockSalesHistory: (Omit<SalesHistoryDocument, 'id' | 'date' | 'deletedAt'> & {id: string, date: Date})[] = mockSalesHistoryRaw.map((s, index) => ({
   id: `sh_seed_${String(index + 1).padStart(3, '0')}`,
-  companyId: MOCK_COMPANY_ID, // Uses standardized ID
+  companyId: MOCK_COMPANY_ID,
   productId: MOCK_PRODUCT_IDS[s.skuForLookup],
   sku: s.skuForLookup,
-  orderId: s.orderId || null, 
+  orderId: s.orderId || null,
   quantity: s.quantity,
   unitPrice: s.unitPrice,
   revenue: s.revenue,
   costAtTimeOfSale: s.costAtTimeOfSale,
   channel: s.channel,
-  customerId: s.customerId || null, 
+  customerId: s.customerId || null,
   date: s.date,
 }));
 
@@ -282,7 +282,7 @@ const mockForecastsRaw: (Omit<ForecastDocument, 'id' | 'companyId' | 'generatedA
 
 const mockForecasts: (Omit<ForecastDocument, 'id' | 'generatedAt'> & {id: string, generatedAt: Date})[] = mockForecastsRaw.map((fc, index) => ({
     id: `fc_seed_${String(index + 1).padStart(3, '0')}`,
-    companyId: MOCK_COMPANY_ID, // Uses standardized ID
+    companyId: MOCK_COMPANY_ID,
     productId: MOCK_PRODUCT_IDS[fc.skuForLookup],
     sku: fc.skuForLookup,
     modelType: fc.modelType,
@@ -320,7 +320,7 @@ const mockDocumentsRaw: (Omit<DocumentMetadata, 'id' | 'companyId' | 'uploadedAt
 
 const mockDocuments: (Omit<DocumentMetadata, 'id' | 'uploadedAt' | 'processedAt' | 'deletedAt'> & {id: string, uploadedAt: Date, processedAt?: Date})[] = mockDocumentsRaw.map((doc, index) => ({
     id: `doc_seed_${String(index + 1).padStart(3, '0')}`,
-    companyId: MOCK_COMPANY_ID, // Uses standardized ID
+    companyId: MOCK_COMPANY_ID,
     ...doc,
     uploadedAt: new Date(Date.now() - (index + 2) * 24 * 60 * 60 * 1000),
     processedAt: new Date(Date.now() - (index + 1) * 24 * 60 * 60 * 1000),
@@ -339,22 +339,22 @@ const mockChatSessionsRaw: (Omit<ChatSessionDocument, 'id' | 'companyId' | 'crea
 ];
 
 const mockChatSessions: (Omit<ChatSessionDocument, 'id' | 'createdAt' | 'lastMessageAt' | 'messages'> & {id: string, createdAt: Date, lastMessageAt: Date, messages: ChatMessage[]})[] = mockChatSessionsRaw.map((chat, index) => {
-  let messageTime = Date.now() - 120000; 
+  let messageTime = Date.now() - 120000;
   const processedMessages: ChatMessage[] = chat.messages.map((rawMsg, msgIndex) => {
-      messageTime += (msgIndex * 5000); 
+      messageTime += (msgIndex * 5000);
       return {
           ...rawMsg,
-          timestamp: AdminTimestamp.fromDate(new Date(messageTime)) 
+          timestamp: AdminTimestamp.fromDate(new Date(messageTime))
       };
   });
 
   return {
     id: `chat_seed_${String(index + 1).padStart(3, '0')}`,
-    companyId: MOCK_COMPANY_ID, // Uses standardized ID
+    companyId: MOCK_COMPANY_ID,
     userId: chat.userId,
     title: chat.title,
     contextSnapshot: chat.contextSnapshot,
-    messages: processedMessages, 
+    messages: processedMessages,
     createdAt: new Date(Date.now() - (index + 2) * 60 * 60 * 1000),
     lastMessageAt: new Date(Date.now() - (index + 1) * 59 * 60 * 1000),
   };
@@ -362,7 +362,7 @@ const mockChatSessions: (Omit<ChatSessionDocument, 'id' | 'createdAt' | 'lastMes
 
 
 const mockDailyAggregate: Omit<DailyAggregateDocument, 'id' | 'date' | 'lastCalculated'> & { date: Date; lastCalculated: Date } = {
-  companyId: MOCK_COMPANY_ID, // Uses standardized ID
+  companyId: MOCK_COMPANY_ID,
   date: new Date(),
   totalInventoryValue: mockInventoryStock.reduce((sum, item) => sum + (item.quantity * item.unitCost), 0),
   lowStockItemsCount: mockInventoryStock.filter(item => item.quantity <= item.reorderPoint && item.reorderPoint > 0).length,
@@ -405,7 +405,7 @@ async function seedDatabase() {
   } catch (diagError: any) {
     console.error(`[Seed Script] CRITICAL ERROR during diagnostic write to (default) database:`, diagError);
     console.error("  This means basic Firestore write operations are failing for the (default) database.");
-    process.exit(1); 
+    process.exit(1);
   }
 
   console.log(`Connecting to Firestore (default) database...`);
@@ -503,11 +503,11 @@ async function seedDatabase() {
   mockChatSessions.forEach(chat => {
     const chatRef = db.collection('chat_sessions').doc(chat.id);
     batch.set(chatRef, {
-        companyId: chat.companyId, // Should be MOCK_COMPANY_ID
+        companyId: chat.companyId,
         userId: chat.userId,
         title: chat.title,
         contextSnapshot: chat.contextSnapshot,
-        messages: chat.messages, 
+        messages: chat.messages,
         createdAt: AdminTimestamp.fromDate(chat.createdAt),
         lastMessageAt: AdminTimestamp.fromDate(chat.lastMessageAt)
     });
@@ -516,7 +516,7 @@ async function seedDatabase() {
   console.log(`Seeding daily aggregate for company ID: ${MOCK_COMPANY_ID}...`);
   const todayForAggregate = new Date();
   todayForAggregate.setUTCHours(0,0,0,0);
-  const aggregateDocId = `${MOCK_COMPANY_ID}_${todayForAggregate.toISOString().split('T')[0]}`; // Uses standardized ID
+  const aggregateDocId = `${MOCK_COMPANY_ID}_${todayForAggregate.toISOString().split('T')[0]}`;
   const aggregateDocRef = db.collection('daily_aggregates').doc(aggregateDocId);
   batch.set(aggregateDocRef, {
     ...mockDailyAggregate,
