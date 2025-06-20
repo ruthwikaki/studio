@@ -1,7 +1,7 @@
 
 // src/lib/firebase/admin-auth.ts
 import type { NextRequest } from 'next/server';
-import { getAuthAdmin, getDb, AdminTimestamp, isAdminInitialized } from './admin'; // Updated imports
+import { getAuthAdmin, getDb, AdminTimestamp, isAdminInitialized } from './admin'; // Corrected imports
 import type { UserDocument, UserRole, UserCacheDocument } from '@/lib/types/firestore';
 import { NextResponse } from 'next/server';
 
@@ -31,9 +31,13 @@ export interface VerifiedUser {
 
 async function fetchAndCacheUserData(uid: string): Promise<VerifiedUser | null> {
   console.log(`[Admin Auth] fetchAndCacheUserData: Attempting to fetch user data for UID: ${uid}`);
-  const firestoreDb = getDb(); // Use getter
+  if (!isAdminInitialized()) {
+    console.error("[Admin Auth] fetchAndCacheUserData: Admin SDK not initialized. Cannot fetch user data.");
+    return null;
+  }
+  const firestoreDb = getDb();
   if (!firestoreDb) {
-    console.error(`[Admin Auth] fetchAndCacheUserData: Firestore service is not available for UID: ${uid}. Admin SDK might not be initialized.`);
+    console.error(`[Admin Auth] fetchAndCacheUserData: Firestore service is not available for UID: ${uid}. Admin SDK might have failed initialization or db getter failed.`);
     return null;
   }
 
@@ -103,9 +107,9 @@ export async function verifyAuthToken(request: NextRequest): Promise<VerifiedUse
     throw new Error('No authorization token provided.');
   }
 
-  const auth = getAuthAdmin(); // Use getter
+  const auth = getAuthAdmin();
   if (!auth) {
-    console.error('[Admin Auth] verifyAuthToken: Firebase Admin Auth service is not available.');
+    console.error('[Admin Auth] verifyAuthToken: Firebase Admin Auth service is not available. SDK might have failed initialization.');
     throw new Error('Firebase Admin Auth service is not available. Check server logs.');
   }
 
@@ -197,4 +201,6 @@ export function withRoleAuthorization(
     return handler(request, context, user);
   });
 }
+    
+
     
