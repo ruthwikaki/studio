@@ -131,12 +131,19 @@ export async function verifyAuthTokenOnServerAction(): Promise<VerifiedUser> {
 // Higher-order function to wrap API route handlers with authentication
 export function withAuth(handler: (request: NextRequest, context: { params: any }, user: VerifiedUser) => Promise<NextResponse | Response>) {
   return async (request: NextRequest, context: { params: any }): Promise<NextResponse | Response> => {
+    console.log(`[Admin Auth - withAuth] API request received for: ${request.nextUrl.pathname}`);
     try {
       const user = await verifyAuthToken(request);
       return await handler(request, context, user);
     } catch (error: any) {
       console.error(`[Admin Auth] withAuth: Authentication failed for request to ${request.nextUrl.pathname}. Error: ${error.message}`);
-      return NextResponse.json({ error: error.message || 'Authentication failed' }, { status: 401 });
+      // Ensure a NextResponse is always returned
+      const response = NextResponse.json({ error: error.message || 'Authentication failed' }, { status: 401 });
+      // Add CORS headers to error responses too
+      response.headers.set('Access-Control-Allow-Origin', '*');
+      response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      return response;
     }
   };
 }
@@ -163,7 +170,11 @@ export function withRoleAuthorization(
 ) {
   return withAuth(async (request, context, user) => {
     if (!requireRole(user.role, minimumRequiredRole)) {
-      return NextResponse.json({ error: `Access denied. Requires ${minimumRequiredRole} role or higher.` }, { status: 403 });
+      const response = NextResponse.json({ error: `Access denied. Requires ${minimumRequiredRole} role or higher.` }, { status: 403 });
+      response.headers.set('Access-Control-Allow-Origin', '*');
+      response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      return response;
     }
     return handler(request, context, user);
   });
