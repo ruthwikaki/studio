@@ -66,3 +66,4 @@ export const MOCK_INVENTORY_JSON_STRING = JSON.stringify(MOCK_INVENTORY_DATA.map
     
     
 
+
