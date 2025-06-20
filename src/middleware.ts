@@ -5,7 +5,7 @@ import type { NextRequest } from 'next/server';
 
 export function middleware(request: NextRequest) {
   const { pathname, method } = request;
-  console.log(`[Middleware] Request: ${method} ${pathname}`);
+  console.log(`[Middleware] Path: ${pathname}, Method: ${method}`);
 
   if (pathname.startsWith('/api/')) {
     console.log(`[Middleware] Processing API request: ${method} ${pathname}`);
@@ -20,21 +20,20 @@ export function middleware(request: NextRequest) {
       return response;
     }
     
-    // For other API requests, pass through to the Next.js handler
-    // and let the handler (or a global config) set specific CORS if needed for non-OPTIONS
     const response = NextResponse.next();
-    // It's generally better to handle CORS in Next.js config or route handlers if needed for non-OPTIONS
-    // But for development, this is okay for now.
-    response.headers.set('Access-Control-Allow-Origin', '*'); 
+    // Add basic CORS headers for actual API responses during development
+    response.headers.set('Access-Control-Allow-Origin', '*');
     console.log(`[Middleware] Passing through API request for: ${pathname} to Next.js handler.`);
     return response;
   }
 
   // For non-API routes, just pass through
-  // console.log(`[Middleware] Not an API request, passing through: ${pathname}`);
+  console.log(`[Middleware] Passing through non-API request: ${pathname}`);
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ['/api/:path*'], // Apply middleware only to API routes
+  // Apply middleware only to API routes to be explicit, or to all if you have other global needs.
+  // For now, focusing on API routes.
+  matcher: ['/api/:path*'], 
 };

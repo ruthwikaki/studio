@@ -5,18 +5,11 @@ import { getDb, isAdminInitialized, getInitializationError, admin } from '@/lib/
 import { verifyAuthToken } from '@/lib/firebase/admin-auth';
 import type { InventoryStockDocument, OrderDocument, SalesHistoryDocument, DailyAggregateDocument } from '@/lib/types/firestore';
 
-export const revalidate = 300; // Revalidate every 5 minutes
+export const dynamic = 'force-dynamic'; // Ensures the route is always re-evaluated
+export const revalidate = 0; // Explicitly disable caching for this dynamic route for now
 
-interface DashboardKPIs {
-  totalInventoryValue: number;
-  lowStockItemsCount: number;
-  outOfStockItemsCount: number;
-  pendingOrdersCount: number;
-  todaysRevenue: number;
-  inventoryValueByCategory?: Record<string, number>;
-  lastUpdated: string;
-  turnoverRate?: number;
-}
+console.log('[API /api/analytics/dashboard/route.ts] File loaded.');
+
 
 export async function GET(request: NextRequest) {
   console.log("[Analytics Dashboard API] Request received at entry point.");
@@ -69,7 +62,7 @@ export async function GET(request: NextRequest) {
       const aggData = aggregateDocSnap.data() as DailyAggregateDocument;
       console.log(`[Analytics Dashboard API] Aggregate document ${aggregateDocId} FOUND.`);
 
-      const kpis: DashboardKPIs = {
+      const kpis = {
         totalInventoryValue: typeof aggData.totalInventoryValue === 'number' ? aggData.totalInventoryValue : 0,
         lowStockItemsCount: typeof aggData.lowStockItemsCount === 'number' ? aggData.lowStockItemsCount : 0,
         outOfStockItemsCount: typeof aggData.outOfStockItemsCount === 'number' ? aggData.outOfStockItemsCount : 0,
@@ -152,7 +145,7 @@ export async function GET(request: NextRequest) {
       console.log(`[Analytics Dashboard API] Live Today's Revenue: Fetched ${salesTodaySnapshot.docs.length} sales records, Revenue: ${todaysRevenue.toFixed(2)}.`);
       console.timeEnd(`calculateLiveDashboardData-${companyId}`);
 
-      const kpis: DashboardKPIs = {
+      const kpis = {
         totalInventoryValue: parseFloat(totalInventoryValue.toFixed(2)),
         lowStockItemsCount,
         outOfStockItemsCount,
@@ -177,4 +170,3 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: errorMessage, details: error.stack ? error.stack.substring(0, 500) + "..." : "No stack trace available" }, { status: 500 });
   }
 }
-    
