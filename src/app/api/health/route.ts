@@ -4,8 +4,6 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { isAdminInitialized, getDb, getInitializationError } from '@/lib/firebase/admin';
 
-console.log('[API /api/health/route.ts] File loaded by Next.js runtime. This is a critical diagnostic log.');
-
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
@@ -19,8 +17,7 @@ export async function GET(request: NextRequest) {
   if (isSDKInitialized) {
     try {
       const db = getDb();
-      // Perform a simple read, e.g., get a non-existent document or list collections
-      // This is a basic check to see if Firestore is accessible.
+      // Perform a simple read to confirm connectivity
       await db.collection('_internal_health_check').limit(1).get();
       firestoreStatus = 'reachable';
       console.log('[API /api/health] Firestore check: Reachable.');
@@ -41,7 +38,7 @@ export async function GET(request: NextRequest) {
     environment: process.env.NODE_ENV || 'unknown',
     adminSDK: {
       isInitialized: isSDKInitialized,
-      reportedError: isSDKInitialized ? null : getInitializationError(),
+      reportedError: getInitializationError(),
     },
     firestore: {
       status: firestoreStatus,
@@ -49,6 +46,6 @@ export async function GET(request: NextRequest) {
     },
   };
   
-  console.log('[API /api/health] Sending success response:', JSON.stringify(responsePayload));
+  console.log('[API /api/health] Sending success response.');
   return NextResponse.json(responsePayload);
 }
