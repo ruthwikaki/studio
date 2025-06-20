@@ -15,13 +15,12 @@ function initializeAdminAppSingleton(): void {
   }
 
   try {
-    // These variables are expected to be in your .env file
     const projectId = process.env.FIREBASE_PROJECT_ID;
     const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
     const privateKey = process.env.FIREBASE_PRIVATE_KEY;
 
     if (!projectId || !clientEmail || !privateKey) {
-      throw new Error('Missing required Firebase Admin environment variables. Ensure FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY are in your .env file.');
+      throw new Error('Missing required Firebase Admin environment variables. Ensure FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY are set.');
     }
 
     if (Fadmin.apps.length > 0) {
@@ -33,7 +32,7 @@ function initializeAdminAppSingleton(): void {
         credential: Fadmin.credential.cert({
           projectId,
           clientEmail,
-          privateKey: privateKey.replace(/\\n/g, '\n'), // Important for handling multiline keys from .env
+          privateKey: privateKey.replace(/\\n/g, '\n'),
         }),
         storageBucket: `${projectId}.appspot.com`,
       });
