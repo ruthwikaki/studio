@@ -18,7 +18,7 @@ interface DashboardKPIs {
   todaysRevenue: number;
   inventoryValueByCategory?: Record<string, number>;
   lastUpdated: string;
-  turnoverRate?: number; // Added this
+  turnoverRate?: number;
 }
 
 export async function GET(request: NextRequest) {
@@ -42,98 +42,74 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: authError.message || 'Authentication failed' }, { status: 401 });
   }
   
-  const db = getDb(); // getDb() will throw if adminInstance is still null or errored after re-init attempt
+  const db = getDb();
   const { companyId } = user;
   console.log(`[Analytics Dashboard API] Authenticated for companyId: ${companyId}, userId: ${user.uid}`);
 
   try {
-    // 1. Inventory Metrics
-    const inventorySnapshot = await db.collection('inventory')
-      .where('companyId', '==', companyId)
-      .where('deletedAt', '==', null)
-      .get();
-    
-    let totalInventoryValue = 0;
-    let lowStockItemsCount = 0;
-    let outOfStockItemsCount = 0;
-    const inventoryValueByCategory: Record<string, number> = {};
+    // 1. Fetch from daily aggregate for base metrics
+    const today = new Date();
+    today.setUTCHours(0,0,0,0);
+    const aggregateDocId = `${companyId}_${today.toISOString().split('T')[0]}`;
+    const aggregateDoc = await db.collection('daily_aggregates').doc(aggregateDocId).get();
 
-    inventorySnapshot.forEach(doc => {
-      const item = doc.data() as InventoryStockDocument;
-      const value = (item.quantity || 0) * (item.unitCost || 0);
-      totalInventoryValue += value;
-      if (item.reorderPoint && (item.quantity || 0) <= item.reorderPoint) {
-        lowStockItemsCount++;
-      }
-      if ((item.quantity || 0) <= 0) {
-        outOfStockItemsCount++;
-      }
-      if (item.category) {
-        inventoryValueByCategory[item.category] = (inventoryValueByCategory[item.category] || 0) + value;
-      }
-    });
+    let kpis: Partial<DashboardKPIs> = {};
+    let source = 'live_calculation';
 
-    // 2. Pending Orders
+    if (aggregateDoc.exists) {
+      source = 'daily_aggregate';
+      const aggData = aggregateDoc.data() as DailyAggregateDocument;
+      kpis = {
+        totalInventoryValue: aggData.totalInventoryValue,
+        lowStockItemsCount: aggData.lowStockItemsCount,
+        outOfStockItemsCount: aggData.outOfStockItemsCount,
+        todaysRevenue: aggData.todaysRevenue,
+        inventoryValueByCategory: aggData.inventoryValueByCategory,
+        turnoverRate: aggData.turnoverRate, // Assuming it's calculated in the job
+        lastUpdated: (aggData.lastCalculated as admin.firestore.Timestamp).toDate().toISOString(),
+      };
+      console.log(`[Analytics Dashboard API] Loaded KPIs from aggregate doc ${aggregateDocId}`);
+    } else {
+      console.warn(`[Analytics Dashboard API] Daily aggregate doc ${aggregateDocId} not found. Calculating live.`);
+      // Fallback to live calculation if aggregate is missing
+      const inventorySnapshot = await db.collection('inventory').where('companyId', '==', companyId).where('deletedAt', '==', null).get();
+      let totalInventoryValue = 0;
+      let lowStockItemsCount = 0;
+      let outOfStockItemsCount = 0;
+      inventorySnapshot.forEach(doc => {
+          const item = doc.data() as InventoryStockDocument;
+          totalInventoryValue += (item.quantity || 0) * (item.unitCost || 0);
+          if (item.reorderPoint && (item.quantity || 0) <= item.reorderPoint) lowStockItemsCount++;
+          if ((item.quantity || 0) <= 0) outOfStockItemsCount++;
+      });
+      kpis.totalInventoryValue = totalInventoryValue;
+      kpis.lowStockItemsCount = lowStockItemsCount;
+      kpis.outOfStockItemsCount = outOfStockItemsCount;
+      kpis.lastUpdated = new Date().toISOString();
+    }
+
+    // 2. Fetch live metrics that are not in the aggregate or need to be fresh
     const pendingOrdersSnapshot = await db.collection('orders')
       .where('companyId', '==', companyId)
       .where('deletedAt', '==', null)
       .where('status', 'in', ['pending', 'pending_approval', 'pending_payment', 'processing', 'awaiting_shipment', 'awaiting_delivery', 'partially_shipped'])
       .count()
       .get();
-    const pendingOrdersCount = pendingOrdersSnapshot.data().count;
+    kpis.pendingOrdersCount = pendingOrdersSnapshot.data().count;
 
-    // 3. Today's Revenue
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date();
-    todayEnd.setHours(23, 59, 59, 999);
-
-    const salesTodaySnapshot = await db.collection('sales_history')
-      .where('companyId', '==', companyId)
-      .where('deletedAt', '==', null)
-      .where('date', '>=', admin.firestore.Timestamp.fromDate(todayStart))
-      .where('date', '<=', admin.firestore.Timestamp.fromDate(todayEnd))
-      .get();
-    
-    let todaysRevenue = 0;
-    salesTodaySnapshot.forEach(doc => {
-      const sale = doc.data() as SalesHistoryDocument;
-      todaysRevenue += sale.revenue || 0;
-    });
-
-    // 4. Inventory Turnover Rate (Simplified: COGS last 90 days / Avg Inventory Value)
-    // For simplicity, we'll use current inventory value as average for this example.
-    // A more accurate calculation would average inventory over the period.
-    let turnoverRate: number | undefined = undefined;
-    const ninetyDaysAgo = new Date();
-    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-    const cogsSnapshot = await db.collection('sales_history')
-      .where('companyId', '==', companyId)
-      .where('deletedAt', '==', null)
-      .where('date', '>=', admin.firestore.Timestamp.fromDate(ninetyDaysAgo))
-      .get();
-    let totalCOGS = 0;
-    cogsSnapshot.forEach(doc => {
-        totalCOGS += (doc.data() as SalesHistoryDocument).costAtTimeOfSale || 0;
-    });
-    if (totalInventoryValue > 0) {
-        turnoverRate = totalCOGS / totalInventoryValue;
+    // 3. Recalculate turnover rate live if not in aggregate, using current inventory value
+    if (kpis.turnoverRate === undefined && kpis.totalInventoryValue! > 0) {
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+      const cogsSnapshot = await db.collection('sales_history').where('companyId', '==', companyId).where('deletedAt', '==', null).where('date', '>=', admin.firestore.Timestamp.fromDate(ninetyDaysAgo)).get();
+      let totalCOGS = 0;
+      cogsSnapshot.forEach(doc => { totalCOGS += (doc.data() as SalesHistoryDocument).costAtTimeOfSale || 0; });
+      kpis.turnoverRate = parseFloat((totalCOGS / kpis.totalInventoryValue!).toFixed(2));
     }
 
 
-    const kpis: DashboardKPIs = {
-      totalInventoryValue,
-      lowStockItemsCount,
-      outOfStockItemsCount,
-      pendingOrdersCount,
-      todaysRevenue,
-      inventoryValueByCategory,
-      turnoverRate: turnoverRate !== undefined ? parseFloat(turnoverRate.toFixed(2)) : undefined,
-      lastUpdated: new Date().toISOString(),
-    };
-
-    console.log(`[Analytics Dashboard API] Successfully fetched KPIs for company ${companyId}. Total Inventory Value: ${totalInventoryValue}`);
-    return NextResponse.json({ data: kpis, source: 'live_data' });
+    console.log(`[Analytics Dashboard API] Successfully fetched KPIs for company ${companyId}. Source: ${source}`);
+    return NextResponse.json({ data: kpis as DashboardKPIs, source });
 
   } catch (error: any) {
     console.error(`[Analytics Dashboard API] Error fetching dashboard data for company ${companyId}. Error: ${error.message}`, error.stack);
