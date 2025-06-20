@@ -31,10 +31,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: authError.message || 'Authentication failed' }, { status: 401 });
   }
 
+  console.log(`[Analytics Dashboard API] Processing request for companyId: ${companyId}`);
+
   try {
     const todayForAggId = new Date();
-    todayForAggId.setUTCHours(0,0,0,0); // Use UTC start of day for ID consistency
-    const todayStr = todayForAggId.toISOString().split('T')[0]; // YYYY-MM-DD in UTC
+    todayForAggId.setUTCHours(0,0,0,0); 
+    const todayStr = todayForAggId.toISOString().split('T')[0]; 
     const aggregateDocId = `${companyId}_${todayStr}`;
     const aggregateDocRef = db.collection('daily_aggregates').doc(aggregateDocId);
     
@@ -63,17 +65,17 @@ export async function GET(request: NextRequest) {
                                           .count()
                                           .get();
       kpis.pendingOrdersCount = pendingOrdersSnapshot.data().count;
-      console.log(`[Analytics Dashboard API] KPIs from aggregate (pending orders fetched live):`, kpis);
+      console.log(`[Analytics Dashboard API] KPIs from aggregate (pending orders: ${kpis.pendingOrdersCount}):`, JSON.stringify(kpis));
       return NextResponse.json({ data: kpis, source: 'aggregate' });
     } else {
-      console.warn(`[Analytics Dashboard API] Aggregate document ${aggregateDocId} not found. Calculating live KPIs for company ${companyId}. This can be slow and might indicate a missing daily aggregation job or date mismatch (UTC vs local).`);
+      console.warn(`[Analytics Dashboard API] Aggregate document ${aggregateDocId} NOT FOUND. Calculating live KPIs for company ${companyId}.`);
       
       console.time(`calculateLiveDashboardData-${companyId}`);
       const inventorySnapshot = await db.collection('inventory')
                                         .where('companyId', '==', companyId)
                                         .where('deletedAt', '==', null) 
                                         .get();
-      console.log(`[Analytics Dashboard API] Fetched ${inventorySnapshot.docs.length} inventory items for live calculation.`);
+      console.log(`[Analytics Dashboard API] Live: Fetched ${inventorySnapshot.docs.length} inventory items for company ${companyId}.`);
       
       let totalInventoryValue = 0;
       let lowStockItemsCount = 0;
@@ -94,6 +96,7 @@ export async function GET(request: NextRequest) {
         
         inventoryValueByCategory[category] = (inventoryValueByCategory[category] || 0) + itemValue;
       });
+      console.log(`[Analytics Dashboard API] Live Inventory Calc: TotalValue=${totalInventoryValue}, LowStock=${lowStockItemsCount}, OutOfStock=${outOfStockItemsCount}`);
 
       const pendingStatuses: string[] = ['pending', 'pending_approval', 'processing', 'awaiting_shipment'];
       const pendingOrdersSnapshot = await db.collection('orders')
@@ -104,8 +107,9 @@ export async function GET(request: NextRequest) {
                                             .count()
                                             .get();
       const pendingOrdersCount = pendingOrdersSnapshot.data().count;
+      console.log(`[Analytics Dashboard API] Live: Fetched ${pendingOrdersCount} pending purchase orders.`);
 
-      const todayStartForSales = new Date(); // Use local server time for "today's" sales
+      const todayStartForSales = new Date(); 
       todayStartForSales.setHours(0, 0, 0, 0);
       const tomorrowStartForSales = new Date(todayStartForSales);
       tomorrowStartForSales.setDate(todayStartForSales.getDate() + 1);
@@ -116,12 +120,12 @@ export async function GET(request: NextRequest) {
                                           .where('date', '<', AdminTimestamp.fromDate(tomorrowStartForSales))
                                           .where('deletedAt', '==', null)
                                           .get();
-      console.log(`[Analytics Dashboard API] Fetched ${salesTodaySnapshot.docs.length} sales records for today.`);
       let todaysRevenue = 0;
       salesTodaySnapshot.docs.forEach(doc => {
         const sale = doc.data() as SalesHistoryDocument;
         todaysRevenue += typeof sale.revenue === 'number' ? sale.revenue : 0;
       });
+      console.log(`[Analytics Dashboard API] Live: Fetched ${salesTodaySnapshot.docs.length} sales records for today, Revenue: ${todaysRevenue}.`);
       console.timeEnd(`calculateLiveDashboardData-${companyId}`);
 
       const kpis: DashboardKPIs = {
@@ -132,9 +136,8 @@ export async function GET(request: NextRequest) {
         todaysRevenue,
         inventoryValueByCategory,
         lastUpdated: new Date().toISOString(),
-        // turnoverRate would typically be calculated separately, not usually live on dashboard due to complexity
       };
-      console.log(`[Analytics Dashboard API] KPIs from live calculation:`, kpis);
+      console.log(`[Analytics Dashboard API] KPIs from live calculation:`, JSON.stringify(kpis));
       return NextResponse.json({ data: kpis, source: 'live_calculation' });
     }
   } catch (error: any) {
