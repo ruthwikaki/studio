@@ -1,9 +1,2 @@
-import AIChatInterface from "@/components/ai-chat/AIChatInterface";
-
-export default function AiChatPage() {
-  return (
-    <div className="w-full h-full">
-      <AIChatInterface />
-    </div>
-  );
-}
+// This file is intentionally left empty to resolve a routing conflict with src/app/(auth)/ai-chat/page.tsx.
+// This file can be safely deleted.
