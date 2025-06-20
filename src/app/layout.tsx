@@ -6,8 +6,8 @@ import AppLayout from '@/components/layout/AppLayout';
 import QueryProvider from '@/components/providers/QueryProvider';
 
 export const metadata: Metadata = {
-  title: 'SupplyChainAI',
-  description: 'AI-Powered Inventory Management',
+  title: 'ARIA',
+  description: 'AI-Powered Supply Chain Management',
 };
 
 export default function RootLayout({

@@ -62,7 +62,7 @@ const prompt = ai.definePrompt({
   name: 'forecastDemandPrompt',
   input: {schema: ForecastDemandInputSchema},
   output: {schema: ForecastDemandOutputSchema},
-  prompt: `You are SupplyChainAI, an expert in demand forecasting.
+  prompt: `You are ARIA, an expert in demand forecasting.
   Analyze the provided historical sales data for SKU: {{{sku}}}.
   The user has selected the "{{{modelType}}}" forecasting model.
   Your task is to generate a demand forecast (30, 60, 90 days) that reflects the characteristics of this chosen model.

@@ -70,7 +70,7 @@ const prompt = ai.definePrompt({
   name: 'marketIntelligencePrompt',
   input: {schema: MarketIntelligenceInputSchema},
   output: {schema: MarketIntelligenceOutputSchema},
-  prompt: `You are SupplyChainAI, an expert market intelligence analyst.
+  prompt: `You are ARIA, an expert market intelligence analyst.
 Your task is to analyze the provided topics, competitor information, regional focus, and custom data sources
 to generate a comprehensive market intelligence report. Consider the specified time range for news and social media.
 

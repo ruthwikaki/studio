@@ -39,7 +39,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/settings', label: 'Settings', icon: Settings, matchSegments: 1 },
 ];
 
-export const APP_NAME = "SupplyChainAI";
+export const APP_NAME = "ARIA";
 export const APP_LOGO_ICON = Box; // Main app logo
 
 // Icons for specific UI elements not in NAV_ITEMS

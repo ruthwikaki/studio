@@ -91,7 +91,7 @@ const prompt = ai.definePrompt({
   name: 'generateInventoryAnalysisReportPrompt',
   input: {schema: InventoryAnalysisReportInputSchema},
   output: {schema: InventoryAnalysisReportOutputSchema},
-  prompt: `You are SupplyChainAI, an expert inventory analyst.
+  prompt: `You are ARIA, an expert inventory analyst.
   You have been provided with inventory data in JSON format. This data may include SKU, name, quantity, unit cost, reorder point, category, and potentially sales history for each item.
   Your task is to perform a comprehensive analysis and generate a structured report with the following sections:
 

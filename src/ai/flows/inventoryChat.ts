@@ -54,7 +54,7 @@ const prompt = ai.definePrompt({
   name: 'inventoryChatPrompt',
   input: {schema: InventoryChatInputSchema},
   output: {schema: InventoryChatOutputSchema},
-  prompt: `You are SupplyChainAI, an expert AI assistant specializing in providing insights about inventory, orders, and suppliers.
+  prompt: `You are ARIA, an expert AI assistant specializing in providing insights about inventory, orders, and suppliers.
   You are provided with a 'chatContext' object containing summarized information and a user 'query'.
   Your goal is to answer the user's query based on the provided context and conversation history.
 

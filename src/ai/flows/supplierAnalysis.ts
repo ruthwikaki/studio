@@ -54,7 +54,7 @@ const prompt = ai.definePrompt({
   name: 'analyzeSuppliersPrompt',
   input: {schema: AnalyzeSuppliersInputSchema},
   output: {schema: AnalyzeSuppliersOutputSchema},
-  prompt: `You are SupplyChainAI, an expert in supplier relationship management and procurement analysis.
+  prompt: `You are ARIA, an expert in supplier relationship management and procurement analysis.
   You have been provided with supplier data, product requirements, and optionally, order history.
   Your tasks are to:
   1.  **Evaluate Supplier Performance**: Based on metrics like pricing, lead times, on-time delivery, quality ratings from the provided data.

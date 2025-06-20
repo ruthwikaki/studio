@@ -45,7 +45,7 @@ const prompt = ai.definePrompt({
   name: 'optimizeReordersPrompt',
   input: {schema: OptimizeReordersInputSchema},
   output: {schema: OptimizeReordersOutputSchema},
-  prompt: `You are SupplyChainAI, an expert in inventory reorder optimization.
+  prompt: `You are ARIA, an expert in inventory reorder optimization.
   Analyze the provided data: current inventory levels, historical demand, supplier lead times, bulk discount thresholds (if any), and cash flow constraints (if any).
   Your goal is to calculate optimal reorder points and quantities for each relevant SKU to minimize stockouts and holding costs, while considering potential discounts and financial constraints.
   Generate concrete purchase order recommendations.

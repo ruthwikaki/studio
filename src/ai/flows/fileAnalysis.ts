@@ -35,7 +35,7 @@ const prompt = ai.definePrompt({
   name: 'analyzeInventoryFilePrompt',
   input: {schema: AnalyzeInventoryFileInputSchema},
   output: {schema: AnalyzeInventoryFileOutputSchema},
-  prompt: `You are SupplyChainAI, an expert inventory analyst.
+  prompt: `You are ARIA, an expert inventory analyst.
   You have been provided with parsed inventory data (originally from a CSV/Excel file) in JSON format.
   Your task is to analyze this data thoroughly and generate a structured report containing:
   1.  **Inventory Health Score**: An overall score from 0 to 100 reflecting the health of the inventory.

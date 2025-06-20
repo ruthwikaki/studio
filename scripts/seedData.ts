@@ -39,16 +39,16 @@ if (admin.apps.length > 0 && admin.app().options && admin.app().options.projectI
 // ------------------------------------------------------------------
 
 
-console.log("--- Data Seeding Script for SupplyChainAI ---");
+console.log("--- Data Seeding Script for ARIA ---");
 
-const MOCK_COMPANY_ID = 'comp_supplychainai_seed_001';
+const MOCK_COMPANY_ID = 'comp_aria_seed_001';
 const MOCK_USER_ID_OWNER = 'user_owner_seed_001';
 const MOCK_USER_ID_MANAGER = 'user_manager_seed_001';
 const MOCK_PRODUCT_IDS: Record<string, string> = {};
 
 const mockCompany: Omit<CompanyDocument, 'id' | 'createdAt'> & { id: string, createdAt: Date } = {
   id: MOCK_COMPANY_ID,
-  name: 'Seed Supply Co.',
+  name: 'ARIA Seed Co.',
   plan: 'pro',
   createdAt: new Date(),
   settings: { timezone: 'America/New_York', currency: 'USD' },
@@ -58,18 +58,18 @@ const mockCompany: Omit<CompanyDocument, 'id' | 'createdAt'> & { id: string, cre
 const mockUsers: (Omit<UserDocument, 'uid' | 'createdAt'> & { uid: string, createdAt: Date })[] = [
   {
     uid: MOCK_USER_ID_OWNER,
-    email: 'owner@seedsupply.example.com',
+    email: 'owner@ariaseed.example.com',
     companyId: MOCK_COMPANY_ID,
     role: 'owner',
-    displayName: 'Seed Owner',
+    displayName: 'ARIA Owner',
     createdAt: new Date(),
   },
   {
     uid: MOCK_USER_ID_MANAGER,
-    email: 'manager@seedsupply.example.com',
+    email: 'manager@ariaseed.example.com',
     companyId: MOCK_COMPANY_ID,
     role: 'manager',
-    displayName: 'Seed Manager',
+    displayName: 'ARIA Manager',
     createdAt: new Date(),
   },
 ];
@@ -81,7 +81,7 @@ const mockProductsRaw: (Omit<ProductDocument, 'id' | 'companyId' | 'createdAt' |
   { sku: "MONITOR01", name: "27in 4K Monitor", description: "Ultra HD 27-inch monitor.", category: "Electronics", basePrice: 349.99, cost: 220.00, imageUrl: "https://placehold.co/300x300.png?text=Monitor", createdBy: MOCK_USER_ID_MANAGER },
   { sku: "TSHIRT001", name: "Organic Cotton T-Shirt", description: "Plain white organic cotton t-shirt.", category: "Apparel", basePrice: 24.99, cost: 8.00, imageUrl: "https://placehold.co/300x300.png?text=TShirt", createdBy: MOCK_USER_ID_MANAGER },
   { sku: "COFFEE001", name: "Premium Coffee Beans 1kg", description: "Whole bean dark roast.", category: "Groceries", basePrice: 19.99, cost: 10.50, imageUrl: "https://placehold.co/300x300.png?text=Coffee", createdBy: MOCK_USER_ID_MANAGER },
-  { sku: "BOOK001", name: "Supply Chain Management Basics", description: "Introductory book on SCM.", category: "Books", basePrice: 49.99, cost: 20.00, imageUrl: "https://placehold.co/300x300.png?text=Book", createdBy: MOCK_USER_ID_MANAGER },
+  { sku: "BOOK001", name: "SCM Basics", description: "Introductory book on SCM.", category: "Books", basePrice: 49.99, cost: 20.00, imageUrl: "https://placehold.co/300x300.png?text=Book", createdBy: MOCK_USER_ID_MANAGER },
 ];
 
 const mockProducts: (Omit<ProductDocument, 'id' | 'createdAt' | 'lastUpdated' | 'deletedAt'> & {id: string, createdAt: Date, lastUpdated: Date})[] = mockProductsRaw.map((p, index) => {
@@ -104,7 +104,7 @@ const mockInventoryStockRaw: (Omit<InventoryStockDocument, 'id' | 'companyId' | 
   { sku: "MONITOR01", name: "27in 4K Monitor", quantity: 0, unitCost: 220.00, reorderPoint: 3, reorderQuantity: 3, location: "WH-C1", lowStockAlertSent: true, category: "Electronics", imageUrl: "https://placehold.co/300x300.png?text=Monitor" },
   { sku: "TSHIRT001", name: "Organic Cotton T-Shirt", quantity: 150, unitCost: 8.00, reorderPoint: 50, reorderQuantity: 75, location: "WH-D1", lowStockAlertSent: false, category: "Apparel", imageUrl: "https://placehold.co/300x300.png?text=TShirt" },
   { sku: "COFFEE001", name: "Premium Coffee Beans 1kg", quantity: 75, unitCost: 10.50, reorderPoint: 30, reorderQuantity: 50, location: "WH-E1", lowStockAlertSent: false, category: "Groceries", imageUrl: "https://placehold.co/300x300.png?text=Coffee" },
-  { sku: "BOOK001", name: "Supply Chain Management Basics", quantity: 20, unitCost: 20.00, reorderPoint: 10, reorderQuantity: 10, location: "WH-F1", lowStockAlertSent: false, category: "Books", imageUrl: "https://placehold.co/300x300.png?text=Book" },
+  { sku: "BOOK001", name: "SCM Basics", quantity: 20, unitCost: 20.00, reorderPoint: 10, reorderQuantity: 10, location: "WH-F1", lowStockAlertSent: false, category: "Books", imageUrl: "https://placehold.co/300x300.png?text=Book" },
 ];
 
 const mockInventoryStock: (Omit<InventoryStockDocument, 'id' | 'lastUpdated' | 'createdAt' | 'createdBy' | 'lastUpdatedBy' | 'deletedAt'> & {id: string, createdAt: Date, lastUpdated: Date, createdBy: string, lastUpdatedBy: string})[] = mockInventoryStockRaw.map((inv, index) => ({
@@ -120,7 +120,7 @@ const mockInventoryStock: (Omit<InventoryStockDocument, 'id' | 'lastUpdated' | '
 
 const laptopDiscountTiers: DiscountTier[] = [
     { minQuantity: 10, price: 830.00 },
-    { minQuantity: 20, discountPercentage: 5 }, // 5% off base 850 = 807.50 (but lastPrice is 840 so this would be relative to that)
+    { minQuantity: 20, discountPercentage: 5 },
 ];
 const monitorDiscountTiers: DiscountTier[] = [
     { minQuantity: 5, price: 205.00 },
@@ -128,7 +128,7 @@ const monitorDiscountTiers: DiscountTier[] = [
 ];
 const mouseDiscountTiers: DiscountTier[] = [
     { minQuantity: 100, price: 14.50 },
-    { minQuantity: 200, discountPercentage: 5 }, // 5% off base 15.50 = 14.725
+    { minQuantity: 200, discountPercentage: 5 },
 ];
 
 
