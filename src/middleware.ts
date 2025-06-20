@@ -1,9 +1,11 @@
 
+// src/middleware.ts
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export function middleware(request: NextRequest) {
-  const { pathname, method } = request;
+  const { method } = request;
+  const pathname = request.nextUrl.pathname; // Correct way to get pathname
   console.log(`[Simplified Middleware] Request to: ${pathname}, Method: ${method}`);
 
   if (pathname.startsWith('/api/')) {
@@ -22,11 +24,12 @@ export function middleware(request: NextRequest) {
     return response;
   }
 
+  // This part should ideally not be reached if matcher is '/api/:path*'
+  // but kept for safety/logging if matcher is changed.
   console.log(`[Simplified Middleware] Allowing non-API request to proceed: ${pathname}`);
   return NextResponse.next();
 }
 
-// Match only API routes for now to be less intrusive
 export const config = {
-  matcher: '/api/:path*',
+  matcher: ['/api/:path*'], // Ensure matcher is an array if not a single string
 };
