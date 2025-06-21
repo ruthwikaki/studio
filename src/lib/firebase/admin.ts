@@ -24,12 +24,12 @@ function initializeAdminAppSingleton(): void {
     console.log('[Admin SDK] Reading environment variables:');
     console.log(`  - FIREBASE_PROJECT_ID: ${projectId ? `SET (Value: ${projectId})` : 'NOT SET'}`);
     console.log(`  - FIREBASE_CLIENT_EMAIL: ${clientEmail ? 'SET' : 'NOT SET'}`);
-    console.log(`  - FIREBASE_PRIVATE_KEY: ${privateKey ? 'SET (First 15 chars: ' + privateKey.substring(0, 15) + '...)' : 'NOT SET'}`);
+    console.log(`  - FIREBASE_PRIVATE_KEY: ${privateKey ? 'SET' : 'NOT SET'}`);
 
     const hasEnvVars = projectId && clientEmail && privateKey;
 
     if (!hasEnvVars) {
-      throw new Error('CRITICAL: One or more required Firebase Admin environment variables are missing (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY).');
+      throw new Error('CRITICAL: One or more required Firebase Admin environment variables are missing (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY). Please check your .env file or server configuration.');
     }
 
     // This handles the common issue of escaped newlines in .env files

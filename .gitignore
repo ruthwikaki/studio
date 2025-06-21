@@ -1,41 +1,61 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# dependencies
+# Dependencies
 /node_modules
 /.pnp
 .pnp.js
-.yarn/install-state.gz
+.pnp.cjs
 
-# testing
+# Testing
 /coverage
 
-# next.js
+# Next.js build output
 /.next/
 /out/
 
-# production
+# Production
 /build
 
-# misc
+# Other
 .DS_Store
 *.pem
 
-# debug
+# Unofficial but common medial file extensions.
+# Since this project is a website, these are likely part of the
+# development process and not part of the source code.
+#
+# *.jpg
+# *.jpeg
+# *.png
+# *.gif
+# *.mp4
+# *.svg
+
+# Environment variables
+.env
+.env*.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# API keys and secrets
+service-account-key.json
+
+# IDE settings
+.vscode/
+.idea/
+
+# Log files
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# local env files
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-.env
+# Local user settings
+.user.settings.json
 
-# vercel
-.vercel
+# Optional eslint cache
+.eslintcache
 
-# Sensitive files
-service-account-key.json
-*.log
+# Optional REPL history
+.node_repl_history
