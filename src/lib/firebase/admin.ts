@@ -1,5 +1,7 @@
 // src/lib/firebase/admin.ts
 import * as Fadmin from 'firebase-admin';
+import fs from 'fs';
+import path from 'path';
 
 console.log('[Admin SDK] Module loading...');
 
@@ -18,14 +20,12 @@ function initializeAdminAppSingleton(): void {
     const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
     const privateKey = process.env.FIREBASE_PRIVATE_KEY;
 
-    if (!projectId || !clientEmail || !privateKey) {
-      throw new Error('Missing required Firebase Admin environment variables. Ensure FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY are set.');
-    }
+    const hasEnvVars = projectId && clientEmail && privateKey;
 
     if (Fadmin.apps.length > 0) {
       console.log('[Admin SDK] An app is already initialized. Getting default app.');
       adminInstance = Fadmin.app();
-    } else {
+    } else if (hasEnvVars) {
       console.log('[Admin SDK] Initializing new Firebase Admin app from environment variables...');
       adminInstance = Fadmin.initializeApp({
         credential: Fadmin.credential.cert({
@@ -35,9 +35,22 @@ function initializeAdminAppSingleton(): void {
         }),
         storageBucket: `${projectId}.appspot.com`,
       });
+    } else {
+      console.log('[Admin SDK] Environment variables not found. Falling back to service-account-key.json...');
+      const serviceAccountPath = path.resolve(process.cwd(), 'service-account-key.json');
+      if (fs.existsSync(serviceAccountPath)) {
+        console.log('[Admin SDK] Initializing from service-account-key.json file...');
+        const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
+        adminInstance = Fadmin.initializeApp({
+          credential: Fadmin.credential.cert(serviceAccount),
+          storageBucket: `${serviceAccount.project_id}.appspot.com`,
+        });
+      } else {
+        throw new Error('Missing Firebase Admin credentials. Provide them either via FIREBASE_* environment variables or a `service-account-key.json` file in the project root.');
+      }
     }
     
-    console.log(`[Admin SDK] Firebase Admin SDK initialized successfully for project: ${adminInstance.options.projectId}`);
+    console.log(`[Admin SDK] Firebase Admin SDK initialized successfully for project: ${adminInstance!.options.projectId}`);
     initializationError = null;
 
   } catch (error: any) {

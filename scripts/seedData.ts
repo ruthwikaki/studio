@@ -18,7 +18,7 @@ if (isAdminInitialized() && admin.apps.length > 0 && admin.app().options && admi
 
     const expectedProjectId = "aria-jknbu";
     if (sdkProjectId !== expectedProjectId) {
-        console.warn(`[Seed Script] WARNING: Initialized Admin SDK is for project '${sdkProjectId}', but expected '${expectedProjectId}'. Make sure this is intentional, and that 'service-account-key.json' in the project root corresponds to '${expectedProjectId}'.`);
+        console.warn(`[Seed Script] WARNING: Initialized Admin SDK is for project '${sdkProjectId}', but expected '${expectedProjectId}'. Make sure this is intentional, and that your credentials correspond to '${expectedProjectId}'.`);
     }
 } else {
   console.error("--------------------------------------------------------------------");
@@ -31,8 +31,9 @@ if (isAdminInitialized() && admin.apps.length > 0 && admin.app().options && admi
     console.error("  Reason: admin.app().options.projectId is undefined/empty.");
   }
   console.error("  This usually means that 'src/lib/firebase/admin.ts' failed to initialize.");
-  console.error("  Please check the server startup logs for errors from 'admin.ts' related to 'service-account-key.json'.");
-  console.error("  The 'service-account-key.json' file must be in the project root directory and be a valid key from your Firebase project.");
+  console.error("  Please check the server startup logs for errors from 'admin.ts'.");
+  console.error("  Make sure you have provided Firebase Admin credentials either via environment variables (FIREBASE_PROJECT_ID, etc.)");
+  console.error("  OR by placing a valid 'service-account-key.json' file in the project root directory.");
   console.error("--------------------------------------------------------------------");
   process.exit(1);
 }
