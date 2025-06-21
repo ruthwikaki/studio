@@ -33,12 +33,9 @@ pnpm-debug.log*
 .env.production.local
 .env
 
-# Firebase
-service-account-key.json
-
 # vercel
 .vercel
 
-# typescript
-*.tsbuildinfo
-next-env.d.ts
+# Sensitive files
+service-account-key.json
+*.log
