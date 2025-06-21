@@ -1,6 +1,6 @@
 
 // scripts/seedData.ts
-import { getDb, AdminTimestamp, FieldValue, admin, isAdminInitialized } from '../src/lib/firebase/admin'; // Import initialized admin components
+import { getDb, AdminTimestamp, FieldValue, admin, isAdminInitialized, getInitializationError } from '../src/lib/firebase/admin'; // Import initialized admin components
 import type { Timestamp as AdminTimestampType } from 'firebase-admin/firestore';
 import type {
   CompanyDocument, UserDocument, ProductDocument, InventoryStockDocument,
@@ -21,9 +21,12 @@ if (isAdminInitialized() && admin.apps.length > 0 && admin.app().options && admi
         console.warn(`[Seed Script] WARNING: Initialized Admin SDK is for project '${sdkProjectId}', but expected '${expectedProjectId}'. Make sure this is intentional, and that your credentials correspond to '${expectedProjectId}'.`);
     }
 } else {
+  const initError = getInitializationError();
   console.error("--------------------------------------------------------------------");
   console.error("[Seed Script] CRITICAL ERROR: Firebase Admin SDK does not seem to be initialized by admin.ts, or project ID is not readable from the SDK instance.");
-  if (admin.apps.length === 0) {
+  if (initError) {
+      console.error(`  Reason from admin.ts: ${initError}`);
+  } else if (admin.apps.length === 0) {
     console.error("  Reason: admin.apps.length is 0. The SDK is not initialized.");
   } else if (admin.apps.length > 0 && !admin.app().options) {
     console.error("  Reason: admin.app().options is undefined.");
@@ -32,8 +35,7 @@ if (isAdminInitialized() && admin.apps.length > 0 && admin.app().options && admi
   }
   console.error("  This usually means that 'src/lib/firebase/admin.ts' failed to initialize.");
   console.error("  Please check the server startup logs for errors from 'admin.ts'.");
-  console.error("  Make sure you have provided Firebase Admin credentials either via environment variables (FIREBASE_PROJECT_ID, etc.)");
-  console.error("  OR by placing a valid 'service-account-key.json' file in the project root directory.");
+  console.error("  Make sure you have provided Firebase Admin credentials via environment variables (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY).");
   console.error("--------------------------------------------------------------------");
   process.exit(1);
 }
