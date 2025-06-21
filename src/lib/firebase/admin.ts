@@ -68,7 +68,10 @@ export function isAdminInitialized(): boolean {
 }
 
 export function getInitializationError(): string | null {
-  return initializationError ? `Admin SDK Init Error: ${initializationError.message}` : null;
+  if (initializationError) {
+      return `Admin SDK Init Error: ${initializationError.message}. Check server logs for full details.`;
+  }
+  return null;
 }
 
 function getAdminInstanceSafe(): Fadmin.app.App {
