@@ -1,4 +1,3 @@
-
 // src/lib/firebase/admin-auth.ts
 import type { NextRequest } from 'next/server';
 import { getAuthAdmin, getDb, AdminTimestamp, isAdminInitialized } from './admin';
@@ -36,13 +35,10 @@ async function getVerifiedUserFromFirestore(uid: string): Promise<VerifiedUser |
 
     if (!isAdminInitialized()) {
         console.error("Admin SDK not initialized. Cannot fetch user from Firestore.");
-        return null;
+        // Throw an error here to make the failure explicit to the caller
+        throw new Error("Admin SDK not initialized. Cannot fetch user from Firestore.");
     }
-    const db = getDb();
-    if (!db) {
-        console.error("Firestore not available. Cannot fetch user.");
-        return null;
-    }
+    const db = getDb(); // This will throw if not initialized
 
     try {
         const userDocRef = db.collection('users').doc(uid);
@@ -79,9 +75,14 @@ export async function verifyAuthToken(request: NextRequest): Promise<VerifiedUse
   // In development, if no token is provided, use a mock user for easier testing
   if (!token) {
     if (process.env.NODE_ENV === 'development') {
-        const mockUser = await getVerifiedUserFromFirestore(MOCK_USER_ID);
-        if (mockUser) return mockUser;
+        try {
+            const mockUser = await getVerifiedUserFromFirestore(MOCK_USER_ID);
+            if (mockUser) return mockUser;
+        } catch (error: any) {
+             console.error("Failed to fetch mock user from firestore during dev auth:", error.message);
+        }
         // Fallback hardcoded mock if Firestore is not available or user not found
+        console.warn("verifyAuthToken is using fallback hardcoded mock user.");
         return { uid: MOCK_USER_ID, companyId: MOCK_COMPANY_ID, role: MOCK_ROLE, email: MOCK_EMAIL };
     }
     throw new Error('No authorization token provided.');
